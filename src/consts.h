@@ -17,6 +17,7 @@ const char *const USEGPU_CPU = "cpu";
 const char *const USEGPU_CUDA = "cuda";
 const char *const USEGPU_ROCM = "rocm";
 const char *const USEGPU_COREML = "coreml";
+const char *const USEGPU_DML = "dml";
 
 const char *const EFFECT_PATH = "effects/mask_alpha_filter.effect";
 const char *const KAWASE_BLUR_EFFECT_PATH = "effects/kawase_blur.effect";

@@ -9,6 +9,9 @@
 #ifdef _WIN32
 #include <wchar.h>
 #include <windows.h>
+#ifdef HAVE_ONNXRUNTIME_DML_EP
+#include <dml_provider_factory.h>
+#endif
 #endif // _WIN32
 
 #include <obs-module.h>
@@ -63,6 +66,11 @@ int createOrtSession(filter_data *tf)
 #ifdef HAVE_ONNXRUNTIME_ROCM_EP
 		if (tf->useGPU == USEGPU_ROCM) {
 			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_ROCM(sessionOptions, 0));
+		}
+#endif
+#ifdef HAVE_ONNXRUNTIME_DML_EP
+		if (tf->useGPU == USEGPU_DML) {
+			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(sessionOptions, 0));
 		}
 #endif
 #if defined(__APPLE__)

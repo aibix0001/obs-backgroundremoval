@@ -157,11 +157,14 @@ obs_properties_t *background_filter_properties(void *data)
 							    OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 
 	obs_property_list_add_string(p_use_gpu, obs_module_text("CPU"), USEGPU_CPU);
-#ifdef HAVE_ONNXRUNTIME_CUDA_CP
+#ifdef HAVE_ONNXRUNTIME_CUDA_EP
 	obs_property_list_add_string(p_use_gpu, obs_module_text("GPUCuda"), USEGPU_CUDA);
 #endif
 #ifdef HAVE_ONNXRUNTIME_ROCM_EP
 	obs_property_list_add_string(p_use_gpu, obs_module_text("GPURocm"), USEGPU_ROCM);
+#endif
+#ifdef HAVE_ONNXRUNTIME_DML_EP
+	obs_property_list_add_string(p_use_gpu, obs_module_text("DirectML"), USEGPU_DML);
 #endif
 #if defined(__APPLE__)
 	obs_property_list_add_string(p_use_gpu, obs_module_text("CoreML"), USEGPU_COREML);
