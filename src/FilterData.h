@@ -3,6 +3,8 @@
 
 #include <obs-module.h>
 
+#include <atomic>
+
 #include "models/Model.h"
 #include "ort-utils/ORTModelData.h"
 
@@ -24,7 +26,7 @@ struct filter_data : public ORTModelData {
 
 	cv::Mat inputBGRA;
 
-	bool isDisabled;
+	std::atomic<bool> isDisabled{false};
 
 	std::mutex inputBGRALock;
 	std::mutex outputLock;
