@@ -29,6 +29,8 @@ struct enhance_filter : public filter_data {
 	cv::Mat outputBGRA;
 	gs_effect_t *blendEffect;
 	float blendFactor;
+
+	std::mutex modelMutex;
 };
 
 const char *enhance_filter_getname(void *unused)
@@ -116,6 +118,9 @@ void enhance_filter_update(void *data, obs_data_t *settings)
 
 	if (tf->modelSelection.empty() || tf->modelSelection != newModel || tf->useGPU != newUseGpu ||
 	    tf->numThreads != newNumThreads) {
+		// Lock modelMutex to prevent race condition with video_tick
+		std::unique_lock<std::mutex> lock(tf->modelMutex);
+
 		tf->numThreads = newNumThreads;
 		tf->modelSelection = newModel;
 		if (tf->modelSelection == MODEL_ENHANCE_TBEFN) {
@@ -203,13 +208,16 @@ void enhance_filter_video_tick(void *data, float seconds)
 	}
 
 	cv::Mat outputImage;
-	try {
-		if (!runFilterModelInference(tf, imageBGRA, outputImage)) {
+	{
+		std::unique_lock<std::mutex> lock(tf->modelMutex);
+		try {
+			if (!runFilterModelInference(tf, imageBGRA, outputImage)) {
+				return;
+			}
+		} catch (const std::exception &e) {
+			obs_log(LOG_ERROR, "Exception caught: %s", e.what());
 			return;
 		}
-	} catch (const std::exception &e) {
-		obs_log(LOG_ERROR, "Exception caught: %s", e.what());
-		return;
 	}
 
 	// Put output image back to source rendering pipeline

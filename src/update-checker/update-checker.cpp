@@ -7,9 +7,12 @@
 
 #include <plugin-support.h>
 
+#include <mutex>
+
 extern "C" const char *PLUGIN_VERSION;
 
 static std::string latestVersionForUpdate;
+static std::mutex latestVersionMutex;
 
 void check_update(void)
 {
@@ -35,10 +38,12 @@ void check_update(void)
 
 		if (info.version == PLUGIN_VERSION) {
 			// No update available, latest version is the same as the current version
+			std::lock_guard<std::mutex> lock(latestVersionMutex);
 			latestVersionForUpdate.clear();
 			return;
 		}
 
+		std::lock_guard<std::mutex> lock(latestVersionMutex);
 		latestVersionForUpdate = info.version;
 	};
 
@@ -47,6 +52,7 @@ void check_update(void)
 
 const char *get_latest_version(void)
 {
+	std::lock_guard<std::mutex> lock(latestVersionMutex);
 	obs_log(LOG_INFO, "get_latest_version: %s", latestVersionForUpdate.c_str());
 	if (latestVersionForUpdate.empty()) {
 		return nullptr;
