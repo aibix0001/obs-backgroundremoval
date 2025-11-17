@@ -7,7 +7,7 @@ body:
     id: md_welcome
     attributes:
       value: |
-        ## 💡 Feature Request for Live Background Removal Lite
+        ## 💡 Feature Request for OBS Background Removal
 
         Please fill out the form below to suggest a new feature or improvement.
         - Check existing issues before submitting a new one.
