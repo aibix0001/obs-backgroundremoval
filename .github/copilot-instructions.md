@@ -48,11 +48,10 @@ This plugin uses neural networks to remove backgrounds from video sources withou
 # System dependencies
 sudo apt install build-essential cmake git curl
 
-# Install gersemi for CMake formatting
-pip install gersemi
-
-# For formatting: clang-format 18+ (version 19.1.1 required for CI)
-# clang-format is usually available via apt on Ubuntu
+# Install formatting tools from OBS Linuxbrew repository
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+brew install obsproject/tools/clang-format@19
+brew install obsproject/tools/gersemi
 ```
 
 ### Building on Ubuntu (Local Development)
@@ -113,13 +112,13 @@ This formats `CMakeLists.txt` and all `*.cmake` files.
 **IMPORTANT**: The CI will fail if formatting is incorrect. Always format before pushing.
 
 ### macOS Build Notes
-- Requires Xcode 16.1 (not App Store version)
+- Requires Xcode 16.4 (not App Store version)
 - Use `.github/scripts/install-vcpkg-macos.bash` for dependency installation
 - Build: `cmake --preset macos-ci && cmake --build --preset macos-ci`
 - Install locally: `cp -r build_macos/RelWithDebInfo/obs-backgroundremoval.plugin ~/Library/Application\ Support/obs-studio/plugins`
 
 ### Windows Build Notes
-- Requires Visual Studio 2022 with C++ workload
+- Requires Visual Studio 2022 with C++ workload and Windows SDK 10.0.22621
 - Use vcpkg triplet: `x64-windows-static-md-obs`
 - Build with: `.github/scripts/Build-Windows.ps1 -Target x64 -Configuration RelWithDebInfo`
 - GPU build: Add `-DGPU=ON` when downloading ONNX Runtime
