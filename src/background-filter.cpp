@@ -417,7 +417,7 @@ void background_filter_destroy(void *data)
 		// Acquire the modelMutex to ensure any in-flight inference completes
 		// before we destroy the filter and its mutex
 		{
-			std::unique_lock<std::mutex> lock(tf->modelMutex);
+			std::lock_guard<std::mutex> lock(tf->modelMutex);
 		}
 
 		obs_enter_graphics();
