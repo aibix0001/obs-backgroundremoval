@@ -168,6 +168,14 @@ void enhance_filter_destroy(void *data)
 	struct enhance_filter *tf = reinterpret_cast<enhance_filter *>(data);
 
 	if (tf) {
+		tf->isDisabled = true;
+
+		// Acquire the modelMutex to ensure any in-flight inference completes
+		// before we destroy the filter and its mutex
+		{
+			std::unique_lock<std::mutex> lock(tf->modelMutex);
+		}
+
 		obs_enter_graphics();
 		gs_texrender_destroy(tf->texrender);
 		if (tf->stagesurface) {
