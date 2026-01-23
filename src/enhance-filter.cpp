@@ -63,6 +63,9 @@ obs_properties_t *enhance_filter_properties(void *data)
 #ifdef HAVE_ONNXRUNTIME_ROCM_EP
 	obs_property_list_add_string(p_use_gpu, obs_module_text("GPUROCM"), USEGPU_ROCM);
 #endif
+#ifdef HAVE_ONNXRUNTIME_MIGRAPHX_EP
+	obs_property_list_add_string(p_use_gpu, obs_module_text("GPUMIGRAPHX"), USEGPU_MIGRAPHX);
+#endif
 #ifdef HAVE_ONNXRUNTIME_TENSORRT_EP
 	obs_property_list_add_string(p_use_gpu, obs_module_text("TENSORRT"), USEGPU_TENSORRT);
 #endif
