@@ -65,6 +65,11 @@ int createOrtSession(filter_data *tf)
 			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_ROCM(sessionOptions, 0));
 		}
 #endif
+#ifdef HAVE_ONNXRUNTIME_MIGRAPHX_EP
+		if (tf->useGPU == USEGPU_MIGRAPHX) {
+			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_MIGraphX(sessionOptions, 0));
+		}
+#endif
 #ifdef HAVE_ONNXRUNTIME_TENSORRT_EP
 		if (tf->useGPU == USEGPU_TENSORRT) {
 			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_Tensorrt(sessionOptions, 0));

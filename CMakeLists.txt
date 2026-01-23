@@ -179,6 +179,17 @@ endif()
 
 check_library_exists(
   onnxruntime::onnxruntime
+  OrtSessionOptionsAppendExecutionProvider_MIGraphX
+  onnxruntime_c_api.h
+  HAVE_ONNXRUNTIME_MIGRAPHX_EP
+)
+if(HAVE_ONNXRUNTIME_MIGRAPHX_EP)
+  message(STATUS "ONNX Runtime MIGraphX Execution Provider found")
+  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE HAVE_ONNXRUNTIME_MIGRAPHX_EP)
+endif()
+
+check_library_exists(
+  onnxruntime::onnxruntime
   OrtSessionOptionsAppendExecutionProvider_Tensorrt
   onnxruntime_c_api.h
   HAVE_ONNXRUNTIME_TENSORRT_EP
