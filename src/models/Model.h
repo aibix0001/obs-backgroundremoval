@@ -281,6 +281,7 @@ public:
 		// For GPU execution providers, we need to recreate output tensors for each inference
 		// to avoid tensor reuse issues that cause processing to stop after one frame
 		// Explicitly check for known GPU providers: cuda, rocm, migraphx, tensorrt, coreml
+		// Note: DirectML is not currently supported in this plugin despite documentation mentions
 		bool requiresTensorRecreation = (useGPU == "cuda" || useGPU == "rocm" || useGPU == "migraphx" ||
 						 useGPU == "tensorrt" || useGPU == "coreml");
 
@@ -297,15 +298,15 @@ public:
 					outputDims[i].data(), outputDims[i].size()));
 			}
 		} else {
-			// For CPU mode, output tensors should have been pre-allocated
+			// For CPU mode, output tensors should have been pre-allocated during initialization
 			if (outputTensor.size() == 0) {
 				obs_log(LOG_ERROR,
-					"Output tensor is empty for CPU mode. This indicates a problem with tensor allocation.");
+					"Output tensor is empty for CPU mode. Tensor allocation may have failed.");
 				return;
 			}
 		}
 
-		// Final check that outputTensor is valid before inference
+		// Final defensive check that outputTensor is valid before calling inference
 		if (outputTensor.size() == 0) {
 			obs_log(LOG_ERROR, "Output tensor is empty. Cannot proceed with inference.");
 			return;
