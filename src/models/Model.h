@@ -280,8 +280,9 @@ public:
 
 		// For GPU execution providers, we need to recreate output tensors for each inference
 		// to avoid tensor reuse issues that cause processing to stop after one frame
-		// Check for known GPU provider strings: cuda, rocm, migraphx, tensorrt, coreml
-		bool isGPU = (useGPU != "cpu" && !useGPU.empty());
+		// Explicitly check for known GPU provider strings to avoid false positives
+		bool isGPU = (useGPU == "cuda" || useGPU == "rocm" || useGPU == "migraphx" || useGPU == "tensorrt" ||
+			      useGPU == "coreml");
 
 		if (isGPU) {
 			// Clear and recreate output tensors for GPU inference
