@@ -280,27 +280,34 @@ public:
 
 		// For GPU execution providers, we need to recreate output tensors for each inference
 		// to avoid tensor reuse issues that cause processing to stop after one frame
-		// Explicitly check for known GPU provider strings to avoid false positives
-		bool isGPU = (useGPU == "cuda" || useGPU == "rocm" || useGPU == "migraphx" || useGPU == "tensorrt" ||
-			      useGPU == "coreml");
+		// Explicitly check for known GPU providers: cuda, rocm, migraphx, tensorrt, coreml
+		bool requiresTensorRecreation = (useGPU == "cuda" || useGPU == "rocm" || useGPU == "migraphx" ||
+						 useGPU == "tensorrt" || useGPU == "coreml");
 
-		if (isGPU) {
+		if (requiresTensorRecreation) {
 			// Clear and recreate output tensors for GPU inference
 			outputTensor.clear();
 
-			Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtDeviceAllocator,
-										OrtMemType::OrtMemTypeDefault);
+			Ort::MemoryInfo cpuMemoryInfo = Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtDeviceAllocator,
+										   OrtMemType::OrtMemTypeDefault);
 
 			for (size_t i = 0; i < outputDims.size(); i++) {
 				outputTensor.push_back(Ort::Value::CreateTensor<float>(
-					memoryInfo, outputTensorValues[i].data(), outputTensorValues[i].size(),
+					cpuMemoryInfo, outputTensorValues[i].data(), outputTensorValues[i].size(),
 					outputDims[i].data(), outputDims[i].size()));
+			}
+		} else {
+			// For CPU mode, output tensors should have been pre-allocated
+			if (outputTensor.size() == 0) {
+				obs_log(LOG_ERROR,
+					"Output tensor is empty for CPU mode. This indicates a problem with tensor allocation.");
+				return;
 			}
 		}
 
-		// Check that outputTensor is valid (should be pre-allocated for CPU or just created for GPU)
+		// Final check that outputTensor is valid before inference
 		if (outputTensor.size() == 0) {
-			obs_log(LOG_ERROR, "Output tensor is empty. This should not happen.");
+			obs_log(LOG_ERROR, "Output tensor is empty. Cannot proceed with inference.");
 			return;
 		}
 
