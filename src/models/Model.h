@@ -85,8 +85,8 @@ class Model {
 private:
 	/* data */
 public:
-	Model(/* args */) {};
-	virtual ~Model() {};
+	Model(/* args */){};
+	virtual ~Model(){};
 
 	const char *name;
 
@@ -259,10 +259,11 @@ public:
 					 const std::vector<Ort::AllocatedStringPtr> &inputNames,
 					 const std::vector<Ort::AllocatedStringPtr> &outputNames,
 					 const std::vector<Ort::Value> &inputTensor,
-					 std::vector<Ort::Value> &outputTensor)
+					 std::vector<Ort::Value> &outputTensor,
+					 const std::vector<std::vector<int64_t>> &outputDims,
+					 std::vector<std::vector<float>> &outputTensorValues, const std::string &useGPU)
 	{
-		if (inputNames.size() == 0 || outputNames.size() == 0 || inputTensor.size() == 0 ||
-		    outputTensor.size() == 0) {
+		if (inputNames.size() == 0 || outputNames.size() == 0 || inputTensor.size() == 0) {
 			obs_log(LOG_INFO, "Skip network inference. Inputs or outputs are null.");
 			return;
 		}
@@ -275,6 +276,30 @@ public:
 		std::vector<const char *> rawOutputNames;
 		for (auto &outputName : outputNames) {
 			rawOutputNames.push_back(outputName.get());
+		}
+
+		// For GPU execution providers, we need to recreate output tensors for each inference
+		// to avoid tensor reuse issues that cause processing to stop after one frame
+		bool isGPU = (useGPU != "cpu");
+
+		if (isGPU) {
+			// Clear and recreate output tensors for GPU inference
+			outputTensor.clear();
+
+			Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtDeviceAllocator,
+										OrtMemType::OrtMemTypeDefault);
+
+			for (size_t i = 0; i < outputDims.size(); i++) {
+				outputTensor.push_back(Ort::Value::CreateTensor<float>(
+					memoryInfo, outputTensorValues[i].data(), outputTensorValues[i].size(),
+					outputDims[i].data(), outputDims[i].size()));
+			}
+		}
+
+		// Check that outputTensor is valid
+		if (outputTensor.size() == 0) {
+			obs_log(LOG_INFO, "Skip network inference. Output tensor is null.");
+			return;
 		}
 
 		session->Run(Ort::RunOptions{nullptr}, rawInputNames.data(), inputTensor.data(), inputNames.size(),
