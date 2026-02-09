@@ -264,7 +264,7 @@ public:
 					 std::vector<std::vector<float>> &outputTensorValues, const std::string &useGPU)
 	{
 		if (inputNames.size() == 0 || outputNames.size() == 0 || inputTensor.size() == 0) {
-			obs_log(LOG_INFO, "Skip network inference. Inputs or outputs are null.");
+			obs_log(LOG_INFO, "Skip network inference. Inputs are null.");
 			return;
 		}
 
@@ -280,7 +280,8 @@ public:
 
 		// For GPU execution providers, we need to recreate output tensors for each inference
 		// to avoid tensor reuse issues that cause processing to stop after one frame
-		bool isGPU = (useGPU != "cpu");
+		// Check for known GPU provider strings: cuda, rocm, migraphx, tensorrt, coreml
+		bool isGPU = (useGPU != "cpu" && !useGPU.empty());
 
 		if (isGPU) {
 			// Clear and recreate output tensors for GPU inference
@@ -296,9 +297,9 @@ public:
 			}
 		}
 
-		// Check that outputTensor is valid
+		// Check that outputTensor is valid (should be pre-allocated for CPU or just created for GPU)
 		if (outputTensor.size() == 0) {
-			obs_log(LOG_INFO, "Skip network inference. Output tensor is null.");
+			obs_log(LOG_ERROR, "Output tensor is empty. This should not happen.");
 			return;
 		}
 
