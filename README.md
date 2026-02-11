@@ -60,9 +60,10 @@ CPU utilization target: < 15%
 - [x] Temporal smoothing, morphological ops, blur — fast on CPU for mask dimensions
 
 ### Phase 6: TensorRT + Adaptive FP16
-- [ ] ONNX to TensorRT engine conversion with caching
-- [ ] FP32 for Turing, FP16 for Ampere/Ada
-- [ ] User-selectable precision override
+- [x] TensorRT V2 API with engine caching (trt-cache/ directory)
+- [x] Adaptive FP16: auto-enabled for Ampere/Ada, FP32 for Turing
+- [x] Timing cache for faster engine rebuilds
+- [x] Graceful CUDA fallback when TensorRT SDK not installed
 
 ### Phase 7: Model Research
 - [ ] Evaluate RMBG v2, MODNet lightweight, BiRefNet
