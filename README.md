@@ -43,9 +43,9 @@ CPU utilization target: < 15%
 - [x] Worker thread handles inference, postprocessing on tick thread
 
 ### Phase 3: Memory Optimization
-- [ ] Eliminate `.clone()` copies in frame pipeline
-- [ ] Pre-allocate and reuse cv::Mat buffers
-- [ ] Move semantics / shared_ptr where appropriate
+- [x] Eliminate `.clone()` copies in frame pipeline
+- [x] Pre-allocate and reuse cv::Mat buffers via `copyTo()`
+- [x] Eliminate full BGRA frame clone in video_tick (work inside lock scope)
 
 ### Phase 4: CUDA Preprocessing Kernels
 - [ ] BGRA to RGB conversion
