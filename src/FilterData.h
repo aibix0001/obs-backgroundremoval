@@ -9,6 +9,7 @@
 #include "models/Model.h"
 #include "ort-utils/ORTModelData.h"
 #include "ort-utils/gpu-info.h"
+#include "ort-utils/cuda-preprocess.h"
 
 /**
   * @brief The filter_data struct
@@ -37,6 +38,9 @@ struct filter_data : public ORTModelData, public std::enable_shared_from_this<fi
 
 	// GPU architecture info (detected once at startup)
 	GpuInfo gpuInfo;
+
+	// CUDA-accelerated preprocessor (reusable GPU buffers)
+	CudaPreprocessor cudaPreprocessor;
 };
 
 #endif /* FILTERDATA_H */

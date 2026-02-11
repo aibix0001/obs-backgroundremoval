@@ -3,6 +3,7 @@
 
 #include <onnxruntime_cxx_api.h>
 #include "plugin-support.h"
+#include "ort-utils/cuda-preprocess.h"
 
 #ifdef _WIN32
 #include <wchar.h>
@@ -223,6 +224,17 @@ public:
 		inputHeight = (int)inputDims[0][1];
 	}
 
+	// Get CUDA preprocessing parameters for this model.
+	// Default: standard /255 normalization in HWC format.
+	virtual PreprocessParams getPreprocessParams() const
+	{
+		return PreprocessParams{0.0f, 0.0f, 0.0f, 255.0f, 255.0f, 255.0f, false};
+	}
+
+	// Set model-specific extra tensor inputs (e.g., scalars for RVM, URetinex).
+	// Called after CUDA preprocessing has written the main image tensor.
+	virtual void setExtraTensorInputs(std::vector<std::vector<float>> &) {}
+
 	virtual void prepareInputToNetwork(cv::Mat &resizedImage, cv::Mat &preprocessedImage)
 	{
 		preprocessedImage = resizedImage / 255.0;
@@ -286,6 +298,11 @@ class ModelBCHW : public Model {
 public:
 	ModelBCHW(/* args */) {}
 	~ModelBCHW() {}
+
+	virtual PreprocessParams getPreprocessParams() const
+	{
+		return PreprocessParams{0.0f, 0.0f, 0.0f, 255.0f, 255.0f, 255.0f, true};
+	}
 
 	virtual void prepareInputToNetwork(cv::Mat &resizedImage, cv::Mat &preprocessedImage)
 	{

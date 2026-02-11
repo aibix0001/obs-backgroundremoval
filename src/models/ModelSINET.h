@@ -8,6 +8,14 @@ public:
 	ModelSINET(/* args */) {}
 	~ModelSINET() {}
 
+	virtual PreprocessParams getPreprocessParams() const
+	{
+		// (pixel - mean) / std, CHW output
+		// cv::Scalar order is R,G,B (after BGRA→RGB conversion)
+		return PreprocessParams{102.890434f, 111.25247f, 126.91212f,
+					62.93292f * 255.0f, 62.82138f * 255.0f, 66.355705f * 255.0f, true};
+	}
+
 	virtual void prepareInputToNetwork(cv::Mat &resizedImage, cv::Mat &preprocessedImage)
 	{
 		resizedImage = (resizedImage - cv::Scalar(102.890434, 111.25247, 126.91212)) /

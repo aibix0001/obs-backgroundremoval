@@ -81,35 +81,27 @@ int createOrtSession(filter_data *tf)
 bool runFilterModelInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat &output)
 {
 	if (tf->session.get() == nullptr) {
-		// Onnx runtime session is not initialized. Problem in initialization
 		return false;
 	}
 	if (tf->model.get() == nullptr) {
-		// Model object is not initialized
 		return false;
 	}
 
-	// To RGB
-	cv::Mat imageRGB;
-	{
-		NVTX_RANGE_COLOR("preprocess_bgra_to_rgb", NVTX_COLOR_PREPROCESS);
-		cv::cvtColor(imageBGRA, imageRGB, cv::COLOR_BGRA2RGB);
-	}
-
-	// Resize to network input size
 	uint32_t inputWidth, inputHeight;
 	tf->model->getNetworkInputSize(tf->inputDims, inputWidth, inputHeight);
 
-	cv::Mat resizedImageRGB;
-	cv::resize(imageRGB, resizedImageRGB, cv::Size(inputWidth, inputHeight));
+	// CUDA-accelerated preprocessing: BGRA→RGB + resize + normalize + optional CHW
+	// Writes directly to ONNX tensor buffer, replacing cvtColor/resize/convertTo/prepareInput/loadInput
+	{
+		NVTX_RANGE_COLOR("cuda_preprocess", NVTX_COLOR_PREPROCESS);
+		PreprocessParams params = tf->model->getPreprocessParams();
+		tf->cudaPreprocessor.preprocess(imageBGRA.data, imageBGRA.cols, imageBGRA.rows,
+						(int)imageBGRA.step[0], tf->inputTensorValues[0].data(), inputWidth,
+						inputHeight, params);
+	}
 
-	// Prepare input to nework
-	cv::Mat resizedImage, preprocessedImage;
-	resizedImageRGB.convertTo(resizedImage, CV_32F);
-
-	tf->model->prepareInputToNetwork(resizedImage, preprocessedImage);
-
-	tf->model->loadInputToTensor(preprocessedImage, inputWidth, inputHeight, tf->inputTensorValues);
+	// Set model-specific extra tensor inputs (e.g., RVM downsample flag)
+	tf->model->setExtraTensorInputs(tf->inputTensorValues);
 
 	// Run network inference
 	{
@@ -119,13 +111,12 @@ bool runFilterModelInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat 
 	}
 
 	// Get output
-	// Map network output to cv::Mat
 	cv::Mat outputImage = tf->model->getNetworkOutput(tf->outputDims, tf->outputTensorValues);
 
 	// Assign output to input in some models that have temporal information
 	tf->model->assignOutputToInput(tf->outputTensorValues, tf->inputTensorValues);
 
-	// Post-process output. The image will now be in [0,1] float, BHWC format
+	// Post-process output
 	{
 		NVTX_RANGE_COLOR("postprocess_output", NVTX_COLOR_POSTPROCESS);
 		tf->model->postprocessOutput(outputImage);

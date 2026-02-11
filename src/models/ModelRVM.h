@@ -74,6 +74,11 @@ public:
 		return true;
 	}
 
+	virtual void setExtraTensorInputs(std::vector<std::vector<float>> &inputTensorValues)
+	{
+		inputTensorValues[5][0] = 1.0f;
+	}
+
 	virtual void loadInputToTensor(const cv::Mat &preprocessedImage, uint32_t, uint32_t,
 				       std::vector<std::vector<float>> &inputTensorValues)
 	{

@@ -8,6 +8,12 @@ public:
 	ModelPPHumanSeg(/* args */) {}
 	~ModelPPHumanSeg() {}
 
+	virtual PreprocessParams getPreprocessParams() const
+	{
+		// (pixel / 256 - 0.5) / 0.5 = (pixel - 128) / 128
+		return PreprocessParams{128.0f, 128.0f, 128.0f, 128.0f, 128.0f, 128.0f, true};
+	}
+
 	virtual void prepareInputToNetwork(cv::Mat &resizedImage, cv::Mat &preprocessedImage)
 	{
 		resizedImage = (resizedImage / 256.0 - cv::Scalar(0.5, 0.5, 0.5)) / cv::Scalar(0.5, 0.5, 0.5);

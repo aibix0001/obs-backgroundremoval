@@ -4,6 +4,9 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/common/bootstrap.cmake" NO_POLICY_SCO
 
 project(${_name} VERSION ${_version})
 
+enable_language(CUDA)
+set(CMAKE_CUDA_ARCHITECTURES "75;86;89")
+
 option(ENABLE_FRONTEND_API "Use obs-frontend-api for UI functionality" OFF)
 option(ENABLE_QT "Use Qt functionality" OFF)
 option(ENABLE_NVTX_PROFILING "Enable NVIDIA Nsight NVTX profiling markers" OFF)
@@ -120,6 +123,7 @@ target_sources(
     src/ort-utils/ort-session-utils.cpp
     src/ort-utils/gpu-info.cpp
     src/ort-utils/async-inference-queue.cpp
+    src/ort-utils/cuda-preprocess.cu
     src/obs-utils/obs-utils.cpp
     src/obs-utils/obs-config-utils.cpp
     src/update-checker/github-utils.cpp

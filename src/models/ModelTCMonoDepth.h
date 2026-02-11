@@ -10,6 +10,12 @@ public:
 	ModelTCMonoDepth(/* args */) {}
 	~ModelTCMonoDepth() {}
 
+	virtual PreprocessParams getPreprocessParams() const
+	{
+		// No normalization, just CHW transpose (values stay in [0, 255] range)
+		return PreprocessParams{0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, true};
+	}
+
 	virtual void prepareInputToNetwork(cv::Mat &resizedImage, cv::Mat &preprocessedImage)
 	{
 		// Do not normalize from [0, 255] to [0, 1].
