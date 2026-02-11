@@ -98,30 +98,9 @@ endif()
 add_subdirectory(src/update-checker/CurlClient)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE CurlClient OpenCV::opencv_core OpenCV::opencv_imgproc)
 
-# Check for ONNX Runtime Execution Providers (CUDA and TensorRT only)
-include(CheckLibraryExists)
-
-check_library_exists(
-  onnxruntime::onnxruntime
-  OrtSessionOptionsAppendExecutionProvider_CUDA
-  onnxruntime_c_api.h
-  HAVE_ONNXRUNTIME_CUDA_EP
-)
-if(HAVE_ONNXRUNTIME_CUDA_EP)
-  message(STATUS "ONNX Runtime CUDA Execution Provider found")
-  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE HAVE_ONNXRUNTIME_CUDA_EP)
-endif()
-
-check_library_exists(
-  onnxruntime::onnxruntime
-  OrtSessionOptionsAppendExecutionProvider_Tensorrt
-  onnxruntime_c_api.h
-  HAVE_ONNXRUNTIME_TENSORRT_EP
-)
-if(HAVE_ONNXRUNTIME_TENSORRT_EP)
-  message(STATUS "ONNX Runtime TensorRT Execution Provider found")
-  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE HAVE_ONNXRUNTIME_TENSORRT_EP)
-endif()
+# NVIDIA GPU execution providers are always available (CUDA + TensorRT)
+# The ONNX Runtime GPU build includes both providers
+message(STATUS "NVIDIA GPU execution providers enabled (CUDA + TensorRT)")
 
 target_sources(
   ${CMAKE_PROJECT_NAME}

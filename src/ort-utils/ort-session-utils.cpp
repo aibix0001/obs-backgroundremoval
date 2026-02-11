@@ -34,16 +34,12 @@ int createOrtSession(filter_data *tf)
 	bfree(modelFilepath_rawPtr);
 
 	try {
-#ifdef HAVE_ONNXRUNTIME_CUDA_EP
 		if (tf->useGPU == USEGPU_CUDA) {
 			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(sessionOptions, 0));
 		}
-#endif
-#ifdef HAVE_ONNXRUNTIME_TENSORRT_EP
 		if (tf->useGPU == USEGPU_TENSORRT) {
 			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_Tensorrt(sessionOptions, 0));
 		}
-#endif
 		tf->session.reset(new Ort::Session(*tf->env, tf->modelFilepath.c_str(), sessionOptions));
 	} catch (const std::exception &e) {
 		obs_log(LOG_ERROR, "%s", e.what());

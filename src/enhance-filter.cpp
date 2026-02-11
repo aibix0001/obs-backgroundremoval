@@ -52,12 +52,8 @@ obs_properties_t *enhance_filter_properties(void *data)
 	obs_property_list_add_string(p_model_select, obs_module_text("ZERODCE"), MODEL_ENHANCE_ZERODCE);
 	obs_property_t *p_use_gpu = obs_properties_add_list(props, "useGPU", obs_module_text("InferenceDevice"),
 							    OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-#ifdef HAVE_ONNXRUNTIME_CUDA_EP
 	obs_property_list_add_string(p_use_gpu, obs_module_text("GPUCUDA"), USEGPU_CUDA);
-#endif
-#ifdef HAVE_ONNXRUNTIME_TENSORRT_EP
 	obs_property_list_add_string(p_use_gpu, obs_module_text("TENSORRT"), USEGPU_TENSORRT);
-#endif
 
 	// Add a informative text about the plugin
 	// replace the placeholder with the current version using std::regex_replace

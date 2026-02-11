@@ -155,16 +155,12 @@ obs_properties_t *background_filter_properties(void *data)
 	/* Mask expansion slider - in advanced settings */
 	obs_properties_add_int_slider(props, "mask_expansion", obs_module_text("MaskExpansion"), -30, 30, 1);
 
-	/* GPU, CPU and performance Props */
+	/* GPU inference device selection (NVIDIA only) */
 	obs_property_t *p_use_gpu = obs_properties_add_list(props, "useGPU", obs_module_text("InferenceDevice"),
 							    OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 
-#ifdef HAVE_ONNXRUNTIME_CUDA_EP
 	obs_property_list_add_string(p_use_gpu, obs_module_text("GPUCUDA"), USEGPU_CUDA);
-#endif
-#ifdef HAVE_ONNXRUNTIME_TENSORRT_EP
 	obs_property_list_add_string(p_use_gpu, obs_module_text("TENSORRT"), USEGPU_TENSORRT);
-#endif
 
 	obs_properties_add_int(props, "mask_every_x_frames", obs_module_text("CalculateMaskEveryXFrame"), 1, 300, 1);
 	obs_properties_add_int_slider(props, "numThreads", obs_module_text("NumThreads"), 0, 8, 1);
