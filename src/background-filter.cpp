@@ -74,33 +74,6 @@ struct background_removal_filter : public filter_data, public std::enable_shared
 static void processImageForBackground(struct background_removal_filter *tf, const cv::Mat &imageBGRA,
 				      cv::Mat &backgroundMask);
 
-// Edge-aware guided filter: refines alpha mask using original image as guide.
-// Aligns mask edges to actual image edges for clean soft-edge matting.
-static void guidedFilter(const cv::Mat &guide, const cv::Mat &src, cv::Mat &dst, int radius, double eps)
-{
-	cv::Mat guideF, srcF;
-	guide.convertTo(guideF, CV_32F);
-	src.convertTo(srcF, CV_32F);
-
-	cv::Size ksize(radius, radius);
-	cv::Mat mean_I, mean_p, mean_Ip, mean_II;
-	cv::boxFilter(guideF, mean_I, CV_32F, ksize);
-	cv::boxFilter(srcF, mean_p, CV_32F, ksize);
-	cv::boxFilter(guideF.mul(srcF), mean_Ip, CV_32F, ksize);
-	cv::boxFilter(guideF.mul(guideF), mean_II, CV_32F, ksize);
-
-	cv::Mat cov_Ip = mean_Ip - mean_I.mul(mean_p);
-	cv::Mat var_I = mean_II - mean_I.mul(mean_I);
-	cv::Mat a = cov_Ip / (var_I + eps);
-	cv::Mat b = mean_p - a.mul(mean_I);
-
-	cv::boxFilter(a, a, CV_32F, ksize);
-	cv::boxFilter(b, b, CV_32F, ksize);
-
-	cv::Mat result = a.mul(guideF) + b;
-	result.convertTo(dst, CV_8U);
-}
-
 const char *background_filter_getname(void *unused)
 {
 	UNUSED_PARAMETER(unused);
@@ -655,19 +628,8 @@ void background_filter_video_tick(void *data, float seconds)
 		backgroundMask.copyTo(tf->lastBackgroundMask); // reuses buffer
 
 		if (tf->isAlphaMatteModel) {
-			// Guided filter at model resolution (320x192) — 36x cheaper than 1080p
-			{
-				std::unique_lock<std::mutex> lock(tf->inputBGRALock, std::try_to_lock);
-				if (lock.owns_lock() && !tf->inputBGRA.empty()) {
-					cv::Mat guideSmall;
-					cv::resize(tf->inputBGRA, guideSmall, backgroundMask.size(), 0, 0,
-						   cv::INTER_AREA);
-					cv::cvtColor(guideSmall, guideSmall, cv::COLOR_BGRA2GRAY);
-					guidedFilter(guideSmall, backgroundMask, backgroundMask, 5, 1e-4);
-				}
-			}
-
-			// Upscale to frame size
+			// Alpha-matte models: just resize continuous mask to frame size.
+			// RVM's alpha output is already soft-edged — no postprocessing needed.
 			cv::resize(backgroundMask, backgroundMask, frameSize, 0, 0, cv::INTER_LINEAR);
 		} else if (tf->enableThreshold) {
 			// Binary mask: contour/smooth/feather postprocessing
