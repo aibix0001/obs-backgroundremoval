@@ -17,6 +17,7 @@
 !.gitignore
 !CLAUDE.md
 !HANDOVER.md
+!PLAN.md
 !buildspec.json
 !CMakeLists.txt
 !CMakePresets.json
