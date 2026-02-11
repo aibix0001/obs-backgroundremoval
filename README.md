@@ -1,103 +1,124 @@
-# OBS Plugin: Portrait Background Removal / Virtual Green-screen and Low-Light Enhancement
+# OBS Background Removal — NVIDIA RTX Optimized Fork
 
-<div align="center">
+Performance-optimized fork of [obs-backgroundremoval](https://github.com/royshil/obs-backgroundremoval) targeting **Ubuntu 24.04 + NVIDIA RTX GPUs** (2000/3000/4000 series).
 
-[![GitHub](https://img.shields.io/github/license/royshil/obs-backgroundremoval)](https://github.com/royshil/obs-backgroundremoval/blob/main/LICENSE)
-[![GitHub Workflow Status](https://github.com/royshil/obs-backgroundremoval/actions/workflows/push.yaml/badge.svg)](https://github.com/royshil/obs-backgroundremoval/actions/workflows/push.yaml)
-[![Total downloads](https://img.shields.io/github/downloads/royshil/obs-backgroundremoval/total)](https://github.com/royshil/obs-backgroundremoval/releases)
-![Flathub](https://img.shields.io/flathub/downloads/com.obsproject.Studio.Plugin.BackgroundRemoval?label=Flathub%20Installs)
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/royshil/obs-backgroundremoval)](https://github.com/royshil/obs-backgroundremoval/releases)
+The upstream plugin is cross-platform but suffers from severe performance issues: synchronous processing blocks the OBS video pipeline, excessive memory copies occur every frame, and all preprocessing/postprocessing runs on the CPU. This fork strips it down to NVIDIA-only and rebuilds the pipeline for real-time performance.
 
-</div>
+## Target Hardware
 
-A plugin for [OBS Studio](https://obsproject.com/) that allows you to replace the background in portrait images and video, as well as enhance low-light scenes.
+| GPU Generation | Buffering | Precision | Recommended Models |
+|----------------|-----------|-----------|-------------------|
+| RTX 2000 (Turing, sm_75) | Double | FP32 | MediaPipe, SelfieSeg |
+| RTX 3000 (Ampere, sm_86) | Double | FP16 | RVM, RMBG |
+| RTX 4000 (Ada Lovelace, sm_89) | Triple | FP16 | All + TensorRT |
 
-<p align="center">
-  <a href="https://royshil.github.io/obs-backgroundremoval/">
-    <b>⬇️ Download & Install OBS Background Removal ⬇️</b>
-  </a>
-</p>
+- **Development GPU**: RTX 2060 Super
+- **OS**: Ubuntu 24.04
+- **Resolution targets**: 1080p and 1440p @ 60fps
 
-Or, browse versions on [releases page](https://github.com/royshil/obs-backgroundremoval/releases).
+## Performance Targets
 
-> Not working? Please try [the Lite version (Live Background Removal Lite)](https://github.com/kaito-tokyo/live-backgroundremoval-lite) developed by one of us (Kaito Udagawa).
+| Resolution | RTX 2000 (FP32) | RTX 3000 (FP16) | RTX 4000 (FP16+TRT) |
+|------------|-----------------|-----------------|---------------------|
+| 1080p @ 60fps | < 10ms/frame | < 7ms/frame | < 5ms/frame |
+| 1440p @ 60fps | < 15ms/frame | < 10ms/frame | < 7ms/frame |
 
-## Usage
+CPU utilization target: < 15%
 
-<div style="text-align:center;">
-<video src="https://github.com/locaal-ai/obs-backgroundremoval/assets/1067855/5ba5aae2-7ea2-4c90-ad45-fba5ccde1a4e" width="320"></video>
-</div>
+## Optimization Progress
 
-Check out the [usage guide page](https://royshil.github.io/obs-backgroundremoval/usage/) for usage walkthrough and recommendations.
+### Phase 1: Remove Non-NVIDIA Code
+- [ ] Strip CPU, AMD (ROCm/MIGraphX), Intel, CoreML, DirectML execution providers
+- [ ] Remove macOS and Windows code paths
+- [ ] Keep only CUDA + TensorRT
 
-Additional tutorial videos:
+### Phase 2a: GPU Architecture Detection
+- [ ] Runtime NVIDIA GPU detection via CUDA API
+- [ ] Architecture mapping (Turing/Ampere/Ada Lovelace)
+- [ ] Adaptive defaults per GPU generation
 
-- Usage tutorial: https://youtu.be/veqNEsMqEE0
-- Depth of Field effect: https://youtu.be/jC3EKSpNjQk
-- Low-light enhancement: https://youtu.be/WSBLYWFrn2Q
-- Remove background from ANY object (not just human): https://youtu.be/N74VCDCToX8
+### Phase 2: Async Processing
+- [ ] Thread-safe inference queue (double/triple buffering)
+- [ ] `video_tick()` pushes frames, returns immediately
+- [ ] Worker thread handles inference and postprocessing
 
-## Introduction
+### Phase 3: Memory Optimization
+- [ ] Eliminate `.clone()` copies in frame pipeline
+- [ ] Pre-allocate and reuse cv::Mat buffers
+- [ ] Move semantics / shared_ptr where appropriate
 
-This plugin is meant to make it easy to replace the background in portrait images and video.
-It is using a neural network to predict the mask of the portrait and remove the background pixels.
-It's easily composable with other OBS plugins to replace the background with e.g. an image or
-a transparent color.
+### Phase 4: CUDA Preprocessing Kernels
+- [ ] BGRA to RGB conversion
+- [ ] Image resize (NPP or custom kernel)
+- [ ] Float conversion + normalization
+- [ ] HWC to CHW transpose
 
-If you like this work, which is given to you completely free of charge, please consider supporting it by sponsoring us on GitHub:
+### Phase 5: CUDA Postprocessing Kernels
+- [ ] Thresholding (binary mask)
+- [ ] Connected components (contours)
+- [ ] Blur operations (Gaussian/stack blur)
+- [ ] Morphological ops (erode/dilate)
 
+### Phase 6: TensorRT + Adaptive FP16
+- [ ] ONNX to TensorRT engine conversion with caching
+- [ ] FP32 for Turing, FP16 for Ampere/Ada
+- [ ] User-selectable precision override
+
+### Phase 7: Model Research
+- [ ] Evaluate RMBG v2, MODNet lightweight, BiRefNet
+- [ ] Test INT8 quantized models
+- [ ] Find TensorRT-optimized models on HuggingFace
+
+### Phase 8: Build System Cleanup
+- [ ] Remove macOS/Windows CMake presets and CI workflows
+- [ ] Add multi-arch CUDA compilation (sm_75, sm_86, sm_89)
+- [ ] Add CUDA Toolkit, TensorRT, NPP dependency checks
+
+## Building
+
+```bash
+# Ubuntu 24.04 with NVIDIA GPU
+# Prerequisites: CUDA Toolkit 11.8+, TensorRT 8.6+
+
+git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
+~/vcpkg/bootstrap-vcpkg.sh
+export VCPKG_ROOT=~/vcpkg
+
+${VCPKG_ROOT}/vcpkg install --triplet x64-linux-obs
+cmake -P cmake/DownloadOnnxruntime.cmake
+cmake --preset ubuntu-ci-x86_64
+cmake --build --preset ubuntu-ci-x86_64
+sudo cmake --install build_x86_64
+```
+
+## Models
+
+Background removal models:
+- SINet, PP-HumanSeg, MediaPipe, RobustVideoMatting, TCMonoDepth, RMBG-1.4, Selfie Segmentation
+
+Low-light enhancement models:
+- TBEFN, URetinex-Net, Semantic-Guided LLIE, Zero-DCE
+
+## Credits
+
+This is a fork of [obs-backgroundremoval](https://github.com/royshil/obs-backgroundremoval) by [Roy Shilkrot](https://github.com/royshil) and contributors.
+
+Original project sponsors:
 - https://github.com/sponsors/royshil
 - https://github.com/sponsors/umireon
 
-### Support and Help
+Pretrained model weights for portrait segmentation:
+- [SINet](https://github.com/anilsathyan7/Portrait-Segmentation/tree/master/SINet)
+- [PP-HumanSeg](https://github.com/PaddlePaddle/PaddleSeg/tree/release/2.7/contrib/PP-HumanSeg)
+- [MediaPipe Meet Segmentation](https://github.com/PINTO0309/PINTO_model_zoo/tree/main/082_MediaPipe_Meet_Segmentation)
+- [RobustVideoMatting](https://github.com/PeterL1n/RobustVideoMatting)
+- [TCMonoDepth](https://github.com/PINTO0309/PINTO_model_zoo/tree/main/384_TCMonoDepth)
+- [RMBG-1.4](https://huggingface.co/briaai/RMBG-1.4)
 
-Reach out to us on [GitHub Discussions](https://github.com/royshil/obs-backgroundremoval/discussions) or the [OBS Plugins forum](https://obsproject.com/forum/resources/background-removal-portrait-segmentation.1260/) for online / immediate help.
+Image enhancement models:
+- [TBEFN](https://github.com/PINTO0309/PINTO_model_zoo/tree/main/213_TBEFN)
+- [URetinex-Net](https://github.com/PINTO0309/PINTO_model_zoo/tree/main/372_URetinex-Net)
+- [Semantic-Guided LLIE](https://github.com/PINTO0309/PINTO_model_zoo/tree/main/370_Semantic-Guided-Low-Light-Image-Enhancement)
+- [Zero-DCE](https://github.com/PINTO0309/PINTO_model_zoo/tree/main/243_Zero-DCE-improved)
 
-If you found a bug or want to suggest a feature or improvement please open an [issue](https://github.com/royshil/obs-backgroundremoval/issues).
-
-If you are looking for hands-on help or private consultation please select a [sponsorship tier](https://github.com/sponsors/royshil?frequency=one-time).
-
-### Technical Details
-
-GPU support:
-
-- On Windows, we plan to support WinML acceleration.
-- On Mac we support CoreML for acceleration, which is efficient on Apple Silicon. **Note:** This plugin does not support cross-architecture translation (Rosetta2). Intel binaries on Apple Silicon or Apple Silicon binaries on Intel will crash.
-- On Linux CUDA, ROCM (deprecated in ONNX Runtime 1.23.0), and MIGraphX are supported if this plugin is built from source. Ensure your ONNX Runtime installation has CUDA, ROCM, or MIGraphX support. For AMD GPUs, MIGraphX is recommended as ROCM was removed from ONNX Runtime starting with version 1.23.0.
-- The goal of this plugin is to be available for everyone on every system, even if they don't own a GPU.
-
-Number of CPU threads is controllable through the UI settings. A 2-thread setting works best.
-
-The pretrained model weights used for portrait foreground segmentation are taken from:
-
-- https://github.com/anilsathyan7/Portrait-Segmentation/tree/master/SINet
-- https://github.com/PaddlePaddle/PaddleSeg/tree/release/2.7/contrib/PP-HumanSeg
-- https://github.com/PINTO0309/PINTO_model_zoo/tree/main/082_MediaPipe_Meet_Segmentation
-- https://github.com/PeterL1n/RobustVideoMatting
-- https://github.com/PINTO0309/PINTO_model_zoo/tree/main/384_TCMonoDepth and https://github.com/yu-li/TCMonoDepth
-- https://huggingface.co/briaai/RMBG-1.4
-
-Image enhancement (low light) models are taken from:
-
-- https://github.com/PINTO0309/PINTO_model_zoo/tree/main/213_TBEFN
-- https://github.com/PINTO0309/PINTO_model_zoo/tree/main/372_URetinex-Net
-- https://github.com/PINTO0309/PINTO_model_zoo/tree/main/370_Semantic-Guided-Low-Light-Image-Enhancement
-- https://github.com/PINTO0309/PINTO_model_zoo/tree/main/243_Zero-DCE-improved
-
-Some more information about how I built it: https://www.morethantechnical.com/2021/04/15/obs-plugin-for-portrait-background-removal-with-onnx-sinet-model/ and https://www.morethantechnical.com/2023/05/20/building-an-obs-background-removal-plugin-a-walkthrough/
-
-### Code Walkthrough
-
-This video on YouTube will take you through the major parts of the code and explain them.
-
-<div align="center">
-  <a href="https://youtu.be/iFQtcJg0Wsk" target="_blank">
-    <img width="50%" src="https://img.youtube.com/vi/iFQtcJg0Wsk/maxresdefault.jpg"/>
-  </a>
-</div>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=locaal-ai/obs-backgroundremoval&type=Date&theme=dark" />
-  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=locaal-ai/obs-backgroundremoval&type=Date" />
-  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=locaal-ai/obs-backgroundremoval&type=Date" />
-</picture>
+Architecture walkthrough (upstream): https://youtu.be/iFQtcJg0Wsk

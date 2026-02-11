@@ -99,7 +99,6 @@
 |------------|-----------------|-----------------|---------------------|
 | 1080p @ 60fps | < 10ms/frame | < 7ms/frame | < 5ms/frame |
 | 1440p @ 60fps | < 15ms/frame | < 10ms/frame | < 7ms/frame |
-| 4K @ 30fps | < 25ms/frame | < 18ms/frame | < 12ms/frame |
 
 **CPU target**: < 15% utilization
 

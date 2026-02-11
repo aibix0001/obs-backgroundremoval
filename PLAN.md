@@ -229,8 +229,7 @@ Target: Ubuntu 24.04 + NVIDIA RTX series (2000, 3000, 4000 series)
 1. Same tests as above
 2. Verify triple-buffering is default
 3. Enable FP16 mode
-4. Test at 4K resolution
-5. Enable TensorRT optimization
+4. Enable TensorRT optimization
 6. Test all models including heavy ones (RMBG, RVM)
 7. Compare performance metrics with RTX 2060
 
@@ -240,7 +239,6 @@ Target: Ubuntu 24.04 + NVIDIA RTX series (2000, 3000, 4000 series)
 |------------|-----------------|-----------------|---------------------|
 | 1080p @ 60fps | < 10ms/frame | < 7ms/frame | < 5ms/frame |
 | 1440p @ 60fps | < 15ms/frame | < 10ms/frame | < 7ms/frame |
-| 4K @ 30fps | < 25ms/frame | < 18ms/frame | < 12ms/frame |
 
 **CPU utilization target:** < 15% (should be mostly idle with GPU acceleration)
 

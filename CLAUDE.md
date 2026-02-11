@@ -158,6 +158,12 @@ No automated unit tests. Manual testing required:
 - Multiple filter instances multiply CPU/GPU usage
 - Filter activation/deactivation can be controlled via settings (see "keep enabled when inactive" option)
 
+## Workflow Rules
+
+- **Commit often**: Make small, focused commits after each meaningful change. Don't batch unrelated changes.
+- **Keep README.md up to date**: README.md serves as the progress tracker. After completing work on any phase or sub-task, update the checkboxes in the "Optimization Progress" section. Mark items with `[x]` when done.
+- **Format before committing**: Always run `./build-aux/run-clang-format` and `./build-aux/run-gersemi` before any commit.
+
 ## Active Optimization Project
 
 **See `HANDOVER.md`** for details on the ongoing optimization project targeting Ubuntu 24.04 + NVIDIA RTX series (2000/3000/4000). Key work includes:
