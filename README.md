@@ -48,16 +48,16 @@ CPU utilization target: < 15%
 - [x] Eliminate full BGRA frame clone in video_tick (work inside lock scope)
 
 ### Phase 4: CUDA Preprocessing Kernels
-- [ ] BGRA to RGB conversion
-- [ ] Image resize (NPP or custom kernel)
-- [ ] Float conversion + normalization
-- [ ] HWC to CHW transpose
+- [x] Fused CUDA kernel: BGRA→RGB + bilinear resize + float32 + normalize
+- [x] HWC and CHW output modes (for BHWC/BCHW models)
+- [x] Per-model parametrized normalization (mean/scale)
+- [x] Multi-arch compilation (sm_75, sm_86, sm_89)
 
-### Phase 5: CUDA Postprocessing Kernels
-- [ ] Thresholding (binary mask)
-- [ ] Connected components (contours)
-- [ ] Blur operations (Gaussian/stack blur)
-- [ ] Morphological ops (erode/dilate)
+### Phase 5: Postprocessing Optimization
+- [x] Analysis: mask postprocessing operates on small data (256x256 uint8 = 65KB)
+- [x] CPU is optimal for mask-size ops (L2 cache resident, no GPU transfer overhead)
+- [x] Contour finding (findContours) is inherently sequential — kept on CPU
+- [x] Temporal smoothing, morphological ops, blur — fast on CPU for mask dimensions
 
 ### Phase 6: TensorRT + Adaptive FP16
 - [ ] ONNX to TensorRT engine conversion with caching
