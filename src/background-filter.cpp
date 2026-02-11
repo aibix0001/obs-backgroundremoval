@@ -384,8 +384,10 @@ void background_filter_update(void *data, obs_data_t *settings)
 	obs_log(LOG_INFO, "  Disabled: %s", tf->isDisabled ? "true" : "false");
 	obs_log(LOG_INFO, "  Model file path: %s", tf->modelFilepath.c_str());
 
-	// Start async inference queue with the current model
-	{
+	// Start async inference queue for non-alpha-matte models.
+	// Alpha-matte models (e.g. RVM) use synchronous inference in video_tick
+	// to eliminate the 2-3 frame async pipeline latency.
+	if (!tf->isAlphaMatteModel) {
 		auto *raw_tf = tf.get();
 		tf->asyncQueue.start(
 			[raw_tf](const cv::Mat &inputBGRA, cv::Mat &outputMask) -> bool {
@@ -397,6 +399,8 @@ void background_filter_update(void *data, obs_data_t *settings)
 				return !outputMask.empty();
 			},
 			tf->gpuInfo.defaultBuffering);
+	} else {
+		obs_log(LOG_INFO, "Alpha-matte model: using synchronous inference (no async queue)");
 	}
 
 	// enable
@@ -547,6 +551,53 @@ void background_filter_video_tick(void *data, float seconds)
 		return;
 	}
 
+	if (tf->isAlphaMatteModel) {
+		// Synchronous inference path for alpha-matte models (e.g. RVM).
+		// Runs inference directly in video_tick to eliminate async pipeline
+		// latency (2-3 frames → 0 frames). With ~10ms inference time,
+		// fits comfortably in the 33ms frame budget at 30fps.
+		try {
+			NVTX_RANGE_COLOR("sync_inference_tick", NVTX_COLOR_INFERENCE);
+
+			std::unique_lock<std::mutex> inputLock(tf->inputBGRALock, std::try_to_lock);
+			if (!inputLock.owns_lock() || tf->inputBGRA.empty()) {
+				return;
+			}
+			cv::Size frameSize = tf->inputBGRA.size();
+
+			cv::Mat rawMask;
+			{
+				std::unique_lock<std::mutex> modelLock(tf->modelMutex);
+				if (!tf->model || !tf->session) {
+					return;
+				}
+				processImageForBackground(tf.get(), tf->inputBGRA, rawMask);
+			}
+			inputLock.unlock();
+
+			if (rawMask.empty()) {
+				return;
+			}
+
+			// Resize model output (320x192) to frame size
+			cv::Mat finalMask;
+			cv::resize(rawMask, finalMask, frameSize, 0, 0, cv::INTER_LINEAR);
+
+			// Publish for video_render
+			{
+				std::lock_guard<std::mutex> lock(tf->outputLock);
+				cv::swap(finalMask, tf->backgroundMask);
+			}
+		} catch (const Ort::Exception &e) {
+			obs_log(LOG_ERROR, "Sync inference ONNXRuntime error: %s", e.what());
+		} catch (const std::exception &e) {
+			obs_log(LOG_ERROR, "Sync inference error: %s", e.what());
+		}
+		return;
+	}
+
+	// --- Async inference path for non-alpha-matte models ---
+
 	if (!tf->asyncQueue.isRunning()) {
 		return;
 	}
@@ -612,8 +663,8 @@ void background_filter_video_tick(void *data, float seconds)
 		NVTX_RANGE_COLOR("postprocess_mask", NVTX_COLOR_POSTPROCESS);
 		cv::Mat backgroundMask = rawMask;
 
-		// Temporal smoothing — skip for alpha-matte models (ConvGRU handles it)
-		if (!tf->isAlphaMatteModel && tf->temporalSmoothFactor > 0.0 && tf->temporalSmoothFactor < 1.0 &&
+		// Temporal smoothing
+		if (tf->temporalSmoothFactor > 0.0 && tf->temporalSmoothFactor < 1.0 &&
 		    !tf->lastBackgroundMask.empty() && tf->lastBackgroundMask.size() == backgroundMask.size()) {
 
 			float temporalSmoothFactor = tf->temporalSmoothFactor;
@@ -627,11 +678,7 @@ void background_filter_video_tick(void *data, float seconds)
 
 		backgroundMask.copyTo(tf->lastBackgroundMask); // reuses buffer
 
-		if (tf->isAlphaMatteModel) {
-			// Alpha-matte models: just resize continuous mask to frame size.
-			// RVM's alpha output is already soft-edged — no postprocessing needed.
-			cv::resize(backgroundMask, backgroundMask, frameSize, 0, 0, cv::INTER_LINEAR);
-		} else if (tf->enableThreshold) {
+		if (tf->enableThreshold) {
 			// Binary mask: contour/smooth/feather postprocessing
 			if (tf->contourFilter > 0.0 && tf->contourFilter < 1.0) {
 				std::vector<std::vector<cv::Point>> contours;
