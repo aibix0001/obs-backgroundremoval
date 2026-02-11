@@ -249,9 +249,9 @@ void background_filter_defaults(obs_data_t *settings)
 	obs_data_set_default_int(settings, "blur_background", 0);
 	obs_data_set_default_int(settings, "numThreads", 1);
 	obs_data_set_default_bool(settings, "enable_focal_blur", false);
-	obs_data_set_default_double(settings, "temporal_smooth_factor", 0.85);
+	obs_data_set_default_double(settings, "temporal_smooth_factor", 0.95);
 	obs_data_set_default_double(settings, "image_similarity_threshold", 35.0);
-	obs_data_set_default_bool(settings, "enable_image_similarity", true);
+	obs_data_set_default_bool(settings, "enable_image_similarity", false);
 	obs_data_set_default_double(settings, "blur_focus_point", 0.1);
 	obs_data_set_default_double(settings, "blur_focus_depth", 0.0);
 }
@@ -556,16 +556,19 @@ void background_filter_video_tick(void *data, float seconds)
 
 		bool shouldPush = true;
 
-		// Image similarity check — skip pushing if the frame hasn't changed
+		// Image similarity check — skip pushing if the frame hasn't changed much
+		// Uses downscaled comparison (160x90) to avoid 8MB PSNR on full-res
 		if (tf->enableImageSimilarity) {
-			if (!tf->lastImageBGRA.empty() && tf->lastImageBGRA.size() == tf->inputBGRA.size()) {
-				double psnr = cv::PSNR(tf->lastImageBGRA, tf->inputBGRA);
+			cv::Mat small;
+			cv::resize(tf->inputBGRA, small, cv::Size(160, 90), 0, 0, cv::INTER_NEAREST);
+			if (!tf->lastImageBGRA.empty() && tf->lastImageBGRA.size() == small.size()) {
+				double psnr = cv::PSNR(tf->lastImageBGRA, small);
 				if (psnr > tf->imageSimilarityThreshold) {
 					shouldPush = false;
 				}
 			}
 			if (shouldPush) {
-				tf->inputBGRA.copyTo(tf->lastImageBGRA); // reuses buffer
+				small.copyTo(tf->lastImageBGRA);
 			}
 		}
 

@@ -58,7 +58,6 @@ void AsyncInferenceQueue::pushFrame(const cv::Mat &frameBGRA)
 		framesDropped_.fetch_add(1);
 	}
 
-	// Swap into input buffer (avoid clone when possible)
 	frameBGRA.copyTo(inputBuffer_);
 	hasNewInput_ = true;
 	inputCv_.notify_one();
@@ -70,7 +69,9 @@ bool AsyncInferenceQueue::getLatestMask(cv::Mat &mask)
 	if (!hasOutput_ || outputBuffer_.empty()) {
 		return false;
 	}
-	outputBuffer_.copyTo(mask);
+	// Swap instead of copy — caller gets the buffer, we release it
+	cv::swap(outputBuffer_, mask);
+	hasOutput_ = false;
 	return true;
 }
 
@@ -89,8 +90,9 @@ void AsyncInferenceQueue::workerLoop()
 				break;
 			}
 
-			// Grab the input
-			inputBuffer_.copyTo(localInput);
+			// Swap input buffer into local — avoids 8.3MB copy,
+			// lock is held so pushFrame can't race
+			cv::swap(inputBuffer_, localInput);
 			hasNewInput_ = false;
 		}
 
@@ -105,7 +107,7 @@ void AsyncInferenceQueue::workerLoop()
 			if (inferenceFunc_ && inferenceFunc_(localInput, localOutput)) {
 				// Publish result
 				std::lock_guard<std::mutex> lock(outputMutex_);
-				localOutput.copyTo(outputBuffer_);
+				cv::swap(localOutput, outputBuffer_);
 				hasOutput_ = true;
 				framesProcessed_.fetch_add(1);
 			}
