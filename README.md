@@ -33,14 +33,14 @@ CPU utilization target: < 15%
 - [x] Keep only CUDA + TensorRT
 
 ### Phase 2a: GPU Architecture Detection
-- [ ] Runtime NVIDIA GPU detection via CUDA API
-- [ ] Architecture mapping (Turing/Ampere/Ada Lovelace)
-- [ ] Adaptive defaults per GPU generation
+- [x] Runtime NVIDIA GPU detection via CUDA API
+- [x] Architecture mapping (Turing/Ampere/Ada Lovelace)
+- [x] Adaptive defaults per GPU generation
 
 ### Phase 2: Async Processing
-- [ ] Thread-safe inference queue (double/triple buffering)
-- [ ] `video_tick()` pushes frames, returns immediately
-- [ ] Worker thread handles inference and postprocessing
+- [x] Thread-safe inference queue (double/triple buffering)
+- [x] `video_tick()` pushes frames, returns immediately
+- [x] Worker thread handles inference, postprocessing on tick thread
 
 ### Phase 3: Memory Optimization
 - [ ] Eliminate `.clone()` copies in frame pipeline
