@@ -224,6 +224,10 @@ public:
 		inputHeight = (int)inputDims[0][1];
 	}
 
+	// Whether this model outputs a continuous alpha matte (e.g. RVM).
+	// When true, the alpha output is used directly as the mask without binarization.
+	virtual bool outputsAlphaMatte() const { return false; }
+
 	// Get CUDA preprocessing parameters for this model.
 	// Default: standard /255 normalization in HWC format.
 	virtual PreprocessParams getPreprocessParams() const

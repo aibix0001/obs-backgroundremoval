@@ -10,6 +10,8 @@ public:
 	ModelRVM(/* args */) {}
 	~ModelRVM() {}
 
+	virtual bool outputsAlphaMatte() const { return true; }
+
 	virtual void populateInputOutputNames(const std::unique_ptr<Ort::Session> &session,
 					      std::vector<Ort::AllocatedStringPtr> &inputNames,
 					      std::vector<Ort::AllocatedStringPtr> &outputNames)
@@ -50,8 +52,8 @@ public:
 			outputDims.push_back(outputTensorInfo.GetShape());
 		}
 
-		const int base_width = 320;
-		const int base_height = 192;
+		const int base_width = 512;
+		const int base_height = 288;
 
 		inputDims[0][0] = 1;
 		inputDims[0][2] = base_height;
@@ -76,14 +78,16 @@ public:
 
 	virtual void setExtraTensorInputs(std::vector<std::vector<float>> &inputTensorValues)
 	{
-		inputTensorValues[5][0] = 1.0f;
+		// downsample_ratio: controls internal downsampling within the model.
+		// 0.375 with 512x288 input → 192x108 internal, good balance of quality vs speed.
+		inputTensorValues[5][0] = 0.375f;
 	}
 
 	virtual void loadInputToTensor(const cv::Mat &preprocessedImage, uint32_t, uint32_t,
 				       std::vector<std::vector<float>> &inputTensorValues)
 	{
 		inputTensorValues[0].assign(preprocessedImage.begin<float>(), preprocessedImage.end<float>());
-		inputTensorValues[5][0] = 1.0f;
+		inputTensorValues[5][0] = 0.375f;
 	}
 
 	virtual void assignOutputToInput(std::vector<std::vector<float>> &outputTensorValues,

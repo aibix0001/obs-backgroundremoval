@@ -41,6 +41,8 @@ struct background_removal_filter : public filter_data, public std::enable_shared
 	float feather = 0.0f;
 	int maskExpansion = 0;
 
+	bool isAlphaMatteModel = false;
+
 	cv::Mat backgroundMask;
 	cv::Mat lastBackgroundMask;
 	cv::Mat lastImageBGRA;
@@ -71,6 +73,33 @@ struct background_removal_filter : public filter_data, public std::enable_shared
 
 static void processImageForBackground(struct background_removal_filter *tf, const cv::Mat &imageBGRA,
 				      cv::Mat &backgroundMask);
+
+// Edge-aware guided filter: refines alpha mask using original image as guide.
+// Aligns mask edges to actual image edges for clean soft-edge matting.
+static void guidedFilter(const cv::Mat &guide, const cv::Mat &src, cv::Mat &dst, int radius, double eps)
+{
+	cv::Mat guideF, srcF;
+	guide.convertTo(guideF, CV_32F);
+	src.convertTo(srcF, CV_32F);
+
+	cv::Size ksize(radius, radius);
+	cv::Mat mean_I, mean_p, mean_Ip, mean_II;
+	cv::boxFilter(guideF, mean_I, CV_32F, ksize);
+	cv::boxFilter(srcF, mean_p, CV_32F, ksize);
+	cv::boxFilter(guideF.mul(srcF), mean_Ip, CV_32F, ksize);
+	cv::boxFilter(guideF.mul(guideF), mean_II, CV_32F, ksize);
+
+	cv::Mat cov_Ip = mean_Ip - mean_I.mul(mean_p);
+	cv::Mat var_I = mean_II - mean_I.mul(mean_I);
+	cv::Mat a = cov_Ip / (var_I + eps);
+	cv::Mat b = mean_p - a.mul(mean_I);
+
+	cv::boxFilter(a, a, CV_32F, ksize);
+	cv::boxFilter(b, b, CV_32F, ksize);
+
+	cv::Mat result = a.mul(guideF) + b;
+	result.convertTo(dst, CV_8U);
+}
 
 const char *background_filter_getname(void *unused)
 {
@@ -187,6 +216,7 @@ obs_properties_t *background_filter_properties(void *data)
 	obs_property_list_add_string(p_model_select, obs_module_text("Selfie Multiclass"), MODEL_SELFIE_MULTICLASS);
 	obs_property_list_add_string(p_model_select, obs_module_text("PPHumanSeg"), MODEL_PPHUMANSEG);
 	obs_property_list_add_string(p_model_select, obs_module_text("Robust Video Matting"), MODEL_RVM);
+	obs_property_list_add_string(p_model_select, obs_module_text("Robust Video Matting (FP16)"), MODEL_RVM_FP16);
 	obs_property_list_add_string(p_model_select, obs_module_text("TCMonoDepth"), MODEL_DEPTH_TCMONODEPTH);
 	obs_property_list_add_string(p_model_select, obs_module_text("RMBG"), MODEL_RMBG);
 
@@ -244,12 +274,12 @@ void background_filter_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "mask_expansion", 0);
 	obs_data_set_default_double(settings, "feather", 0.0);
 	obs_data_set_default_string(settings, "useGPU", USEGPU_CUDA);
-	obs_data_set_default_string(settings, "model_select", MODEL_MEDIAPIPE);
+	obs_data_set_default_string(settings, "model_select", MODEL_RVM_FP16);
 	obs_data_set_default_int(settings, "mask_every_x_frames", 1);
 	obs_data_set_default_int(settings, "blur_background", 0);
 	obs_data_set_default_int(settings, "numThreads", 1);
 	obs_data_set_default_bool(settings, "enable_focal_blur", false);
-	obs_data_set_default_double(settings, "temporal_smooth_factor", 0.95);
+	obs_data_set_default_double(settings, "temporal_smooth_factor", 0.7);
 	obs_data_set_default_double(settings, "image_similarity_threshold", 35.0);
 	obs_data_set_default_bool(settings, "enable_image_similarity", false);
 	obs_data_set_default_double(settings, "blur_focus_point", 0.1);
@@ -323,6 +353,9 @@ void background_filter_update(void *data, obs_data_t *settings)
 		if (tf->modelSelection == MODEL_RVM) {
 			tf->model.reset(new ModelRVM);
 		}
+		if (tf->modelSelection == MODEL_RVM_FP16) {
+			tf->model.reset(new ModelRVM);
+		}
 		if (tf->modelSelection == MODEL_PPHUMANSEG) {
 			tf->model.reset(new ModelPPHumanSeg);
 		}
@@ -332,6 +365,8 @@ void background_filter_update(void *data, obs_data_t *settings)
 		if (tf->modelSelection == MODEL_RMBG) {
 			tf->model.reset(new ModelRMBG);
 		}
+
+		tf->isAlphaMatteModel = tf->model && tf->model->outputsAlphaMatte();
 
 		int ortSessionResult = createOrtSession(tf.get());
 		if (ortSessionResult != OBS_BGREMOVAL_ORT_SESSION_SUCCESS) {
@@ -442,7 +477,7 @@ void *background_filter_create(obs_data_t *settings, obs_source_t *source)
 		std::string instanceName{"background-removal-inference"};
 		instance->env.reset(new Ort::Env(OrtLoggingLevel::ORT_LOGGING_LEVEL_ERROR, instanceName.c_str()));
 
-		instance->modelSelection = MODEL_MEDIAPIPE;
+		instance->modelSelection = MODEL_RVM_FP16;
 
 		// Detect GPU once at startup for adaptive defaults
 		if (detectGpu(instance->gpuInfo)) {
@@ -506,8 +541,11 @@ static void processImageForBackground(struct background_removal_filter *tf, cons
 	}
 	// Assume outputImage is now a single channel, uint8 image with values between 0 and 255
 
-	// If we have a threshold, apply it. Otherwise, just use the output image as the mask
-	if (tf->enableThreshold) {
+	if (tf->model->outputsAlphaMatte()) {
+		// Alpha-matte models (e.g. RVM) output continuous alpha — use directly as mask.
+		// The alpha represents foreground confidence [0=bg, 255=fg], so invert for background mask.
+		backgroundMask = 255 - outputImage;
+	} else if (tf->enableThreshold) {
 		// We need to make tf->threshold (float [0,1]) be in that range
 		const uint8_t threshold_value = (uint8_t)(tf->threshold * 255.0f);
 		backgroundMask = outputImage < threshold_value;
@@ -620,8 +658,22 @@ void background_filter_video_tick(void *data, float seconds)
 
 		backgroundMask.copyTo(tf->lastBackgroundMask); // reuses buffer
 
-		// Contour processing — only applicable with thresholding
-		if (tf->enableThreshold) {
+		if (tf->isAlphaMatteModel) {
+			// Alpha-matte models: resize continuous mask to frame size
+			cv::resize(backgroundMask, backgroundMask, frameSize, 0, 0, cv::INTER_LINEAR);
+
+			// Guided filter: refine mask edges using the original frame as guide.
+			// This aligns soft alpha edges to real image edges (hair, clothing).
+			{
+				std::unique_lock<std::mutex> lock(tf->inputBGRALock, std::try_to_lock);
+				if (lock.owns_lock() && !tf->inputBGRA.empty()) {
+					cv::Mat guideGray;
+					cv::cvtColor(tf->inputBGRA, guideGray, cv::COLOR_BGRA2GRAY);
+					guidedFilter(guideGray, backgroundMask, backgroundMask, 9, 1e-4);
+				}
+			}
+		} else if (tf->enableThreshold) {
+			// Binary mask: contour/smooth/feather postprocessing
 			if (tf->contourFilter > 0.0 && tf->contourFilter < 1.0) {
 				std::vector<std::vector<cv::Point>> contours;
 				findContours(backgroundMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
