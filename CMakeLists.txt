@@ -6,6 +6,7 @@ project(${_name} VERSION ${_version})
 
 option(ENABLE_FRONTEND_API "Use obs-frontend-api for UI functionality" OFF)
 option(ENABLE_QT "Use Qt functionality" OFF)
+option(ENABLE_NVTX_PROFILING "Enable NVIDIA Nsight NVTX profiling markers" OFF)
 
 set(VCPKG_TARGET_TRIPLET "" CACHE STRING "Vcpkg target triplet to use")
 option(USE_PKGCONFIG "Use pkg-config to find dependencies" ON)
@@ -32,6 +33,17 @@ if(ENABLE_QT)
     ${CMAKE_PROJECT_NAME}
     PROPERTIES AUTOMOC ON AUTOUIC ON AUTORCC ON
   )
+endif()
+
+# CUDA Runtime (required for GPU detection and preprocessing)
+find_package(CUDAToolkit REQUIRED)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE CUDA::cudart)
+
+# NVTX profiling support (optional, for Nsight Systems/Compute)
+if(ENABLE_NVTX_PROFILING)
+  message(STATUS "NVTX profiling enabled - link with Nsight Systems for analysis")
+  target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE ENABLE_NVTX_PROFILING)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE CUDA::nvToolsExt)
 endif()
 
 if(NOT VCPKG_TARGET_TRIPLET STREQUAL "")
@@ -77,7 +89,7 @@ else()
   find_package(OpenCV CONFIG REQUIRED)
 endif()
 
-# ONNX Runtime - Linux only
+# ONNX Runtime - Linux only (GPU build with CUDA + TensorRT)
 if(NOT USE_SYSTEM_ONNXRUNTIME)
   set(ONNXRUNTIME_DIR "${CMAKE_SOURCE_DIR}/onnxruntime")
   list(PREPEND CMAKE_PREFIX_PATH "${ONNXRUNTIME_DIR}")
@@ -99,7 +111,6 @@ add_subdirectory(src/update-checker/CurlClient)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE CurlClient OpenCV::opencv_core OpenCV::opencv_imgproc)
 
 # NVIDIA GPU execution providers are always available (CUDA + TensorRT)
-# The ONNX Runtime GPU build includes both providers
 message(STATUS "NVIDIA GPU execution providers enabled (CUDA + TensorRT)")
 
 target_sources(
@@ -107,6 +118,7 @@ target_sources(
   PRIVATE
     src/plugin-main.c
     src/ort-utils/ort-session-utils.cpp
+    src/ort-utils/gpu-info.cpp
     src/obs-utils/obs-utils.cpp
     src/obs-utils/obs-config-utils.cpp
     src/update-checker/github-utils.cpp

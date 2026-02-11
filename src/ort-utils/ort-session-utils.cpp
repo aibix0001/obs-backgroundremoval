@@ -6,6 +6,7 @@
 #include "ort-session-utils.h"
 #include "consts.h"
 #include "plugin-support.h"
+#include "profiler.h"
 
 int createOrtSession(filter_data *tf)
 {
@@ -90,7 +91,10 @@ bool runFilterModelInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat 
 
 	// To RGB
 	cv::Mat imageRGB;
-	cv::cvtColor(imageBGRA, imageRGB, cv::COLOR_BGRA2RGB);
+	{
+		NVTX_RANGE_COLOR("preprocess_bgra_to_rgb", NVTX_COLOR_PREPROCESS);
+		cv::cvtColor(imageBGRA, imageRGB, cv::COLOR_BGRA2RGB);
+	}
 
 	// Resize to network input size
 	uint32_t inputWidth, inputHeight;
@@ -108,7 +112,11 @@ bool runFilterModelInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat 
 	tf->model->loadInputToTensor(preprocessedImage, inputWidth, inputHeight, tf->inputTensorValues);
 
 	// Run network inference
-	tf->model->runNetworkInference(tf->session, tf->inputNames, tf->outputNames, tf->inputTensor, tf->outputTensor);
+	{
+		NVTX_RANGE_COLOR("model_inference", NVTX_COLOR_INFERENCE);
+		tf->model->runNetworkInference(tf->session, tf->inputNames, tf->outputNames, tf->inputTensor,
+					       tf->outputTensor);
+	}
 
 	// Get output
 	// Map network output to cv::Mat
@@ -118,7 +126,10 @@ bool runFilterModelInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat 
 	tf->model->assignOutputToInput(tf->outputTensorValues, tf->inputTensorValues);
 
 	// Post-process output. The image will now be in [0,1] float, BHWC format
-	tf->model->postprocessOutput(outputImage);
+	{
+		NVTX_RANGE_COLOR("postprocess_output", NVTX_COLOR_POSTPROCESS);
+		tf->model->postprocessOutput(outputImage);
+	}
 
 	// Convert [0,1] float to CV_8U [0,255]
 	outputImage.convertTo(output, CV_8U, 255.0);

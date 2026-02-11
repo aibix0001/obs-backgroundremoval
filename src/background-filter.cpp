@@ -4,6 +4,8 @@
 
 #include <opencv2/imgproc.hpp>
 
+#include "ort-utils/profiler.h"
+
 #include <numeric>
 #include <memory>
 #include <exception>
@@ -476,6 +478,7 @@ static void processImageForBackground(struct background_removal_filter *tf, cons
 
 void background_filter_video_tick(void *data, float seconds)
 {
+	NVTX_RANGE_COLOR("background_filter_video_tick", NVTX_COLOR_TICK);
 	UNUSED_PARAMETER(seconds);
 
 	// Cast to shared_ptr pointer and create a local shared_ptr
@@ -696,6 +699,7 @@ static gs_texture_t *blur_background(std::shared_ptr<background_removal_filter> 
 
 void background_filter_video_render(void *data, gs_effect_t *_effect)
 {
+	NVTX_RANGE_COLOR("background_filter_video_render", NVTX_COLOR_RENDER);
 	UNUSED_PARAMETER(_effect);
 
 	// Cast to shared_ptr pointer and create a local shared_ptr
