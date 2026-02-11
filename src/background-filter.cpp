@@ -639,8 +639,8 @@ void background_filter_video_tick(void *data, float seconds)
 		NVTX_RANGE_COLOR("postprocess_mask", NVTX_COLOR_POSTPROCESS);
 		cv::Mat backgroundMask = rawMask;
 
-		// Temporal smoothing
-		if (tf->temporalSmoothFactor > 0.0 && tf->temporalSmoothFactor < 1.0 &&
+		// Temporal smoothing — skip for alpha-matte models (ConvGRU handles it)
+		if (!tf->isAlphaMatteModel && tf->temporalSmoothFactor > 0.0 && tf->temporalSmoothFactor < 1.0 &&
 		    !tf->lastBackgroundMask.empty() && tf->lastBackgroundMask.size() == backgroundMask.size()) {
 
 			float temporalSmoothFactor = tf->temporalSmoothFactor;
@@ -655,19 +655,20 @@ void background_filter_video_tick(void *data, float seconds)
 		backgroundMask.copyTo(tf->lastBackgroundMask); // reuses buffer
 
 		if (tf->isAlphaMatteModel) {
-			// Alpha-matte models: resize continuous mask to frame size
-			cv::resize(backgroundMask, backgroundMask, frameSize, 0, 0, cv::INTER_LINEAR);
-
-			// Guided filter: refine mask edges using the original frame as guide.
-			// This aligns soft alpha edges to real image edges (hair, clothing).
+			// Guided filter at model resolution (320x192) — 36x cheaper than 1080p
 			{
 				std::unique_lock<std::mutex> lock(tf->inputBGRALock, std::try_to_lock);
 				if (lock.owns_lock() && !tf->inputBGRA.empty()) {
-					cv::Mat guideGray;
-					cv::cvtColor(tf->inputBGRA, guideGray, cv::COLOR_BGRA2GRAY);
-					guidedFilter(guideGray, backgroundMask, backgroundMask, 9, 1e-4);
+					cv::Mat guideSmall;
+					cv::resize(tf->inputBGRA, guideSmall, backgroundMask.size(), 0, 0,
+						   cv::INTER_AREA);
+					cv::cvtColor(guideSmall, guideSmall, cv::COLOR_BGRA2GRAY);
+					guidedFilter(guideSmall, backgroundMask, backgroundMask, 5, 1e-4);
 				}
 			}
+
+			// Upscale to frame size
+			cv::resize(backgroundMask, backgroundMask, frameSize, 0, 0, cv::INTER_LINEAR);
 		} else if (tf->enableThreshold) {
 			// Binary mask: contour/smooth/feather postprocessing
 			if (tf->contourFilter > 0.0 && tf->contourFilter < 1.0) {
