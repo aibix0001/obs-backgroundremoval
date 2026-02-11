@@ -103,8 +103,9 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE onnxruntime::onnxruntime)
 
 if(NOT USE_SYSTEM_ONNXRUNTIME)
   file(GLOB ONNXRUNTIME_SO_FILES "${ONNXRUNTIME_DIR}/lib64/libonnxruntime.so.*")
+  file(GLOB ONNXRUNTIME_PROVIDER_FILES "${ONNXRUNTIME_DIR}/lib64/libonnxruntime_providers_*.so")
   install(
-    FILES ${ONNXRUNTIME_SO_FILES} "${ONNXRUNTIME_DIR}/lib64/libonnxruntime_providers_shared.so"
+    FILES ${ONNXRUNTIME_SO_FILES} ${ONNXRUNTIME_PROVIDER_FILES}
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/obs-plugins/${CMAKE_PROJECT_NAME}
   )
   set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES INSTALL_RPATH "$ORIGIN/${CMAKE_PROJECT_NAME}")
