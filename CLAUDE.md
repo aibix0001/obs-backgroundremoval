@@ -161,7 +161,7 @@ No automated unit tests. Manual testing required:
 ## Workflow Rules
 
 - **Commit often**: Make small, focused commits after each meaningful change. Don't batch unrelated changes.
-- **Keep README.md up to date**: README.md serves as the progress tracker. After completing work on any phase or sub-task, update the checkboxes in the "Optimization Progress" section. Mark items with `[x]` when done.
+- **Keep PROGRESS.md up to date**: PROGRESS.md serves as the optimization progress tracker. After completing work on any phase or sub-task, update the checkboxes. Mark items with `[x]` when done.
 - **Format before committing**: Always run `./build-aux/run-clang-format` and `./build-aux/run-gersemi` before any commit.
 
 ## Active Optimization Project

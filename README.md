@@ -1,142 +1,125 @@
-# OBS Background Removal — NVIDIA RTX Optimized Fork
+# OBS Background Removal — NVIDIA RTX Optimized
 
-Performance-optimized fork of [obs-backgroundremoval](https://github.com/royshil/obs-backgroundremoval) targeting **Ubuntu 24.04 + NVIDIA RTX GPUs** (2000/3000/4000 series).
+Real-time AI background removal plugin for OBS Studio, optimized for NVIDIA RTX GPUs on Linux.
 
-The upstream plugin is cross-platform but suffers from severe performance issues: synchronous processing blocks the OBS video pipeline, excessive memory copies occur every frame, and all preprocessing/postprocessing runs on the CPU. This fork strips it down to NVIDIA-only and rebuilds the pipeline for real-time performance.
+Uses [Robust Video Matting](https://github.com/PeterL1n/RobustVideoMatting) (RVM) with the Deep Guided Filter refiner to produce broadcast-quality soft alpha mattes with clean edges around hair, fingers, and clothing — no green screen needed.
 
-## Target Hardware
+## Features
 
-| GPU Generation | Buffering | Precision | Recommended Models |
-|----------------|-----------|-----------|-------------------|
-| RTX 2000 (Turing, sm_75) | Double | FP32 | MediaPipe, SelfieSeg |
-| RTX 3000 (Ampere, sm_86) | Double | FP16 | RVM, RMBG |
-| RTX 4000 (Ada Lovelace, sm_89) | Triple | FP16 | All + TensorRT |
+- **Soft alpha matte output** — continuous transparency, not binary cutoffs
+- **Temporal consistency** — RVM's ConvGRU recurrent state eliminates flickering between frames
+- **Full-resolution edge refinement** — Deep Guided Filter uses the 1080p source for edge-aware upsampling
+- **Synchronous inference** — mask tracks movements in real-time with zero pipeline latency
+- **CUDA-accelerated preprocessing** — fused BGRA→RGB + resize + normalize kernel
+- **TensorRT support** — adaptive FP16 with engine caching for Ampere/Ada GPUs
+- **GPU auto-detection** — optimal defaults per RTX generation (Turing, Ampere, Ada Lovelace)
 
-- **Development GPU**: RTX 2060 Super
-- **OS**: Ubuntu 24.04
-- **Resolution targets**: 1080p and 1440p @ 60fps
+## Supported Hardware
 
-## Performance Targets
+| GPU Generation | Architecture | Precision | Status |
+|----------------|-------------|-----------|--------|
+| RTX 2000 (Turing) | sm_75 | FP32 | Tested (dev GPU: RTX 2060 Super) |
+| RTX 3000 (Ampere) | sm_86 | FP16 | Supported |
+| RTX 4000 (Ada Lovelace) | sm_89 | FP16 | Supported |
 
-| Resolution | RTX 2000 (FP32) | RTX 3000 (FP16) | RTX 4000 (FP16+TRT) |
-|------------|-----------------|-----------------|---------------------|
-| 1080p @ 60fps | < 10ms/frame | < 7ms/frame | < 5ms/frame |
-| 1440p @ 60fps | < 15ms/frame | < 10ms/frame | < 7ms/frame |
+**OS**: Ubuntu 24.04 (other Linux distros may work but are untested)
+**Resolution**: 1080p and 1440p @ 30-60fps
 
-CPU utilization target: < 15%
+## Installation
 
-## Optimization Progress
-
-### Phase 1: Remove Non-NVIDIA Code
-- [x] Strip CPU, AMD (ROCm/MIGraphX), Intel, CoreML, DirectML execution providers
-- [x] Remove macOS and Windows code paths
-- [x] Keep only CUDA + TensorRT
-
-### Phase 2a: GPU Architecture Detection
-- [x] Runtime NVIDIA GPU detection via CUDA API
-- [x] Architecture mapping (Turing/Ampere/Ada Lovelace)
-- [x] Adaptive defaults per GPU generation
-
-### Phase 2: Async Processing
-- [x] Thread-safe inference queue (double/triple buffering)
-- [x] `video_tick()` pushes frames, returns immediately
-- [x] Worker thread handles inference, postprocessing on tick thread
-
-### Phase 3: Memory Optimization
-- [x] Eliminate `.clone()` copies in frame pipeline
-- [x] Pre-allocate and reuse cv::Mat buffers via `copyTo()`
-- [x] Eliminate full BGRA frame clone in video_tick (work inside lock scope)
-
-### Phase 4: CUDA Preprocessing Kernels
-- [x] Fused CUDA kernel: BGRA→RGB + bilinear resize + float32 + normalize
-- [x] HWC and CHW output modes (for BHWC/BCHW models)
-- [x] Per-model parametrized normalization (mean/scale)
-- [x] Multi-arch compilation (sm_75, sm_86, sm_89)
-
-### Phase 5: Postprocessing Optimization
-- [x] Analysis: mask postprocessing operates on small data (256x256 uint8 = 65KB)
-- [x] CPU is optimal for mask-size ops (L2 cache resident, no GPU transfer overhead)
-- [x] Contour finding (findContours) is inherently sequential — kept on CPU
-- [x] Temporal smoothing, morphological ops, blur — fast on CPU for mask dimensions
-
-### Phase 6: TensorRT + Adaptive FP16
-- [x] TensorRT V2 API with engine caching (trt-cache/ directory)
-- [x] Adaptive FP16: auto-enabled for Ampere/Ada, FP32 for Turing
-- [x] Timing cache for faster engine rebuilds
-- [x] Graceful CUDA fallback when TensorRT SDK not installed
-
-### Phase 7: Model Research
-- [x] Evaluated RMBG v2.0 (BiRefNet-based, 1GB, 100ms+ — too slow for real-time)
-- [x] Evaluated BiRefNet/BiRefNet-lite (500MB-1GB, 70-140ms — too slow)
-- [x] Evaluated MODNet webcam (15MB, 3-5ms — viable but existing models sufficient)
-- [x] **Best real-time models already included**: RVM (3-4ms), PP-HumanSeg (2-3ms), MediaPipe (<1ms)
-
-### Phase 8: Build System Cleanup
-- [x] Removed macOS/Windows CMake presets and CI workflows (Phase 1)
-- [x] Multi-arch CUDA compilation: sm_75, sm_86, sm_89 (Phase 4)
-- [x] CUDAToolkit required, TensorRT graceful fallback (Phase 6)
-
-### Phase 9: Alpha Matte Pipeline (Maxine-Quality Masking)
-- [x] Downloaded RVM MobileNetV3 FP16 model (7MB, half the size of FP32)
-- [x] Added `outputsAlphaMatte()` virtual to Model base — RVM preserves continuous alpha
-- [x] Skip binarization for alpha-matte models — soft edges instead of hard 0/255 cutoff
-- [x] Increased RVM input resolution from 320x192 to 512x288 (downsample_ratio=0.375)
-- [x] Guided filter edge refinement — aligns mask edges to real image edges (hair, clothing)
-- [x] Registered RVM FP16 in UI, set as default model
-- [x] Tuned temporal smoothing to 0.7 (ConvGRU handles internal temporal stability)
-
-## Building
+### Prerequisites
 
 ```bash
-# Ubuntu 24.04 with NVIDIA GPU
-# Prerequisites: CUDA Toolkit 11.8+, TensorRT 8.6+
+# CUDA Toolkit 11.8+
+sudo apt install nvidia-cuda-toolkit
 
+# cuDNN 9 (via pip, then symlink)
+pip install nvidia-cudnn-cu12
+sudo ln -sf $(python3 -c "import nvidia.cudnn; print(nvidia.cudnn.__path__[0])")/lib/libcudnn*.so* \
+    /usr/lib/x86_64-linux-gnu/
+
+# vcpkg (C++ package manager)
 git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
 ~/vcpkg/bootstrap-vcpkg.sh
 export VCPKG_ROOT=~/vcpkg
+```
 
+### Build from Source
+
+```bash
+git clone https://github.com/aibix0001/obs-backgroundremoval.git
+cd obs-backgroundremoval
+
+# Install C++ dependencies (first run takes 10-20 minutes)
 ${VCPKG_ROOT}/vcpkg install --triplet x64-linux-obs
+
+# Download ONNX Runtime 1.23.2 GPU
 cmake -P cmake/DownloadOnnxruntime.cmake
+
+# Build
 cmake --preset ubuntu-ci-x86_64
 cmake --build --preset ubuntu-ci-x86_64
+
+# Install to system OBS plugins directory
 sudo cmake --install build_x86_64
 ```
 
-## Model Recommendations (by speed)
+### Verify Installation
 
-| Model | Input | Est. RTX 3060 | Quality | Best For |
-|-------|-------|--------------|---------|----------|
-| MediaPipe | 256x256 | <1ms | Low | Maximum FPS |
-| SINet | 320x320 | <1ms | Low | Maximum FPS |
-| PP-HumanSeg | 192x192 | 2-3ms | Medium | Balanced |
-| RVM (MobileNetV3) | 192x320 | 3-4ms | Medium-High | Video (temporal) |
-| RMBG 1.4 | 1024x1024 | 30-50ms | High | Quality priority |
+1. Launch OBS Studio
+2. Add a video source (camera or capture card)
+3. Right-click the source → **Filters** → **+** → **Background Removal**
+4. The default model (Robust Video Matting) should activate immediately
 
-All models benefit from CUDA preprocessing and TensorRT FP16 on Ampere/Ada GPUs.
+## Configuration
 
-Low-light enhancement models:
-- TBEFN, URetinex-Net, Semantic-Guided LLIE, Zero-DCE
+The filter works out of the box with sensible defaults. For advanced tuning, enable **Advanced** in the filter properties:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Model | Robust Video Matting | Best quality. Other models available for speed. |
+| Inference Device | CUDA | Use TensorRT for faster inference on Ampere/Ada |
+| Blur Background | 0 | Set 1-20 for background blur instead of removal |
+| Temporal Smooth | 0.7 | Higher = more stable, lower = more responsive |
+
+### Available Models
+
+| Model | Speed | Quality | Notes |
+|-------|-------|---------|-------|
+| **Robust Video Matting** | ~20ms | Excellent | Soft alpha, temporal consistency, DGF refiner |
+| PP-HumanSeg | ~3ms | Medium | Fast binary segmentation |
+| MediaPipe | <1ms | Low | Ultra-fast, low quality |
+| SINet | <1ms | Low | Ultra-fast |
+| RMBG 1.4 | ~40ms | High | Best static quality, no temporal |
+| Selfie Segmentation | ~2ms | Medium | Google's selfie model |
+
+## Performance
+
+Measured on RTX 2060 Super at 1080p:
+
+| Stage | Time |
+|-------|------|
+| CUDA preprocess (BGRA→RGB + normalize) | ~1.8ms |
+| RVM inference (1080p, downsample_ratio=0.25) | ~15-20ms |
+| Total per frame | ~20ms |
+| GPU utilization | ~70% |
+
+Faster GPUs (RTX 3070+) will have significant headroom for 60fps.
 
 ## Credits
 
-This is a fork of [obs-backgroundremoval](https://github.com/royshil/obs-backgroundremoval) by [Roy Shilkrot](https://github.com/royshil) and contributors.
+Fork of [obs-backgroundremoval](https://github.com/royshil/obs-backgroundremoval) by [Roy Shilkrot](https://github.com/royshil) and contributors.
 
-Original project sponsors:
-- https://github.com/sponsors/royshil
-- https://github.com/sponsors/umireon
-
-Pretrained model weights for portrait segmentation:
+Pretrained models:
+- [RobustVideoMatting](https://github.com/PeterL1n/RobustVideoMatting) (MobileNetV3) — Lin et al., WACV 2022
 - [SINet](https://github.com/anilsathyan7/Portrait-Segmentation/tree/master/SINet)
 - [PP-HumanSeg](https://github.com/PaddlePaddle/PaddleSeg/tree/release/2.7/contrib/PP-HumanSeg)
 - [MediaPipe Meet Segmentation](https://github.com/PINTO0309/PINTO_model_zoo/tree/main/082_MediaPipe_Meet_Segmentation)
-- [RobustVideoMatting](https://github.com/PeterL1n/RobustVideoMatting)
+- [RMBG-1.4](https://huggingface.co/briaai/RMBG-1.4) — BRIA AI
 - [TCMonoDepth](https://github.com/PINTO0309/PINTO_model_zoo/tree/main/384_TCMonoDepth)
-- [RMBG-1.4](https://huggingface.co/briaai/RMBG-1.4)
 
-Image enhancement models:
-- [TBEFN](https://github.com/PINTO0309/PINTO_model_zoo/tree/main/213_TBEFN)
-- [URetinex-Net](https://github.com/PINTO0309/PINTO_model_zoo/tree/main/372_URetinex-Net)
-- [Semantic-Guided LLIE](https://github.com/PINTO0309/PINTO_model_zoo/tree/main/370_Semantic-Guided-Low-Light-Image-Enhancement)
-- [Zero-DCE](https://github.com/PINTO0309/PINTO_model_zoo/tree/main/243_Zero-DCE-improved)
+Low-light enhancement: TBEFN, URetinex-Net, Semantic-Guided LLIE, Zero-DCE
 
-Architecture walkthrough (upstream): https://youtu.be/iFQtcJg0Wsk
+## License
+
+GPL-3.0 — see [LICENSE](LICENSE)
