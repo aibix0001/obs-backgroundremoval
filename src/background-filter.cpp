@@ -216,7 +216,6 @@ obs_properties_t *background_filter_properties(void *data)
 	obs_property_list_add_string(p_model_select, obs_module_text("Selfie Multiclass"), MODEL_SELFIE_MULTICLASS);
 	obs_property_list_add_string(p_model_select, obs_module_text("PPHumanSeg"), MODEL_PPHUMANSEG);
 	obs_property_list_add_string(p_model_select, obs_module_text("Robust Video Matting"), MODEL_RVM);
-	obs_property_list_add_string(p_model_select, obs_module_text("Robust Video Matting (FP16)"), MODEL_RVM_FP16);
 	obs_property_list_add_string(p_model_select, obs_module_text("TCMonoDepth"), MODEL_DEPTH_TCMONODEPTH);
 	obs_property_list_add_string(p_model_select, obs_module_text("RMBG"), MODEL_RMBG);
 
@@ -274,7 +273,7 @@ void background_filter_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "mask_expansion", 0);
 	obs_data_set_default_double(settings, "feather", 0.0);
 	obs_data_set_default_string(settings, "useGPU", USEGPU_CUDA);
-	obs_data_set_default_string(settings, "model_select", MODEL_RVM_FP16);
+	obs_data_set_default_string(settings, "model_select", MODEL_RVM);
 	obs_data_set_default_int(settings, "mask_every_x_frames", 1);
 	obs_data_set_default_int(settings, "blur_background", 0);
 	obs_data_set_default_int(settings, "numThreads", 1);
@@ -351,9 +350,6 @@ void background_filter_update(void *data, obs_data_t *settings)
 			tf->model.reset(new ModelMediaPipe);
 		}
 		if (tf->modelSelection == MODEL_RVM) {
-			tf->model.reset(new ModelRVM);
-		}
-		if (tf->modelSelection == MODEL_RVM_FP16) {
 			tf->model.reset(new ModelRVM);
 		}
 		if (tf->modelSelection == MODEL_PPHUMANSEG) {
@@ -477,7 +473,7 @@ void *background_filter_create(obs_data_t *settings, obs_source_t *source)
 		std::string instanceName{"background-removal-inference"};
 		instance->env.reset(new Ort::Env(OrtLoggingLevel::ORT_LOGGING_LEVEL_ERROR, instanceName.c_str()));
 
-		instance->modelSelection = MODEL_RVM_FP16;
+		instance->modelSelection = MODEL_RVM;
 
 		// Detect GPU once at startup for adaptive defaults
 		if (detectGpu(instance->gpuInfo)) {
