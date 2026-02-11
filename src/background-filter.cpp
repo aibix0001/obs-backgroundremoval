@@ -544,51 +544,50 @@ void background_filter_video_tick(void *data, float seconds)
 		return;
 	}
 
-	cv::Mat imageBGRA;
+	// Process input frame: similarity check + push to async queue
+	// All done within the lock to avoid cloning the full BGRA frame
+	cv::Size frameSize;
 	{
 		std::unique_lock<std::mutex> lock(tf->inputBGRALock, std::try_to_lock);
-		if (!lock.owns_lock()) {
+		if (!lock.owns_lock() || tf->inputBGRA.empty()) {
 			return;
 		}
-		if (tf->inputBGRA.empty()) {
-			return;
+		frameSize = tf->inputBGRA.size();
+
+		bool shouldPush = true;
+
+		// Image similarity check — skip pushing if the frame hasn't changed
+		if (tf->enableImageSimilarity) {
+			if (!tf->lastImageBGRA.empty() && tf->lastImageBGRA.size() == tf->inputBGRA.size()) {
+				double psnr = cv::PSNR(tf->lastImageBGRA, tf->inputBGRA);
+				if (psnr > tf->imageSimilarityThreshold) {
+					shouldPush = false;
+				}
+			}
+			if (shouldPush) {
+				tf->inputBGRA.copyTo(tf->lastImageBGRA); // reuses buffer
+			}
 		}
-		imageBGRA = tf->inputBGRA.clone();
+
+		// Frame skip — reduce push frequency
+		tf->maskEveryXFramesCount++;
+		tf->maskEveryXFramesCount %= tf->maskEveryXFrames;
+		if (tf->maskEveryXFramesCount != 0) {
+			shouldPush = false;
+		}
+
+		// Push directly to async queue (avoids extra clone)
+		if (shouldPush) {
+			tf->asyncQueue.pushFrame(tf->inputBGRA);
+		}
 	}
 
 	// Initialize background mask if empty (first frame, before any inference completes)
 	{
 		std::lock_guard<std::mutex> lock(tf->outputLock);
 		if (tf->backgroundMask.empty()) {
-			tf->backgroundMask = cv::Mat(imageBGRA.size(), CV_8UC1, cv::Scalar(255));
+			tf->backgroundMask = cv::Mat(frameSize, CV_8UC1, cv::Scalar(255));
 		}
-	}
-
-	// Image similarity check — skip pushing if the frame hasn't changed significantly
-	bool shouldPush = true;
-	if (tf->enableImageSimilarity) {
-		if (!tf->lastImageBGRA.empty() && !imageBGRA.empty() &&
-		    tf->lastImageBGRA.size() == imageBGRA.size()) {
-			double psnr = cv::PSNR(tf->lastImageBGRA, imageBGRA);
-			if (psnr > tf->imageSimilarityThreshold) {
-				shouldPush = false;
-			}
-		}
-		if (shouldPush) {
-			tf->lastImageBGRA = imageBGRA.clone();
-		}
-	}
-
-	// Frame skip — reduce push frequency
-	tf->maskEveryXFramesCount++;
-	tf->maskEveryXFramesCount %= tf->maskEveryXFrames;
-	if (tf->maskEveryXFramesCount != 0) {
-		shouldPush = false;
-	}
-
-	// Push frame to async queue (non-blocking, drops if worker is busy)
-	if (shouldPush) {
-		tf->asyncQueue.pushFrame(imageBGRA);
 	}
 
 	// Pull latest completed mask from worker thread
@@ -616,7 +615,7 @@ void background_filter_video_tick(void *data, float seconds)
 					1.0 - temporalSmoothFactor, 0.0, backgroundMask);
 		}
 
-		tf->lastBackgroundMask = backgroundMask.clone();
+		backgroundMask.copyTo(tf->lastBackgroundMask); // reuses buffer
 
 		// Contour processing — only applicable with thresholding
 		if (tf->enableThreshold) {
@@ -642,7 +641,7 @@ void background_filter_video_tick(void *data, float seconds)
 			}
 
 			// Resize mask to current frame size
-			cv::resize(backgroundMask, backgroundMask, imageBGRA.size());
+			cv::resize(backgroundMask, backgroundMask, frameSize);
 
 			if (tf->smoothContour > 0.0) {
 				backgroundMask = backgroundMask > 128;
