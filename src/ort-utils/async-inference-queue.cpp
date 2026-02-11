@@ -101,7 +101,7 @@ void AsyncInferenceQueue::workerLoop()
 		}
 
 		// Run inference
-		{
+		try {
 			NVTX_RANGE_COLOR("async_inference_worker", NVTX_COLOR_INFERENCE);
 
 			if (inferenceFunc_ && inferenceFunc_(localInput, localOutput)) {
@@ -111,6 +111,8 @@ void AsyncInferenceQueue::workerLoop()
 				hasOutput_ = true;
 				framesProcessed_.fetch_add(1);
 			}
+		} catch (const std::exception &e) {
+			obs_log(LOG_ERROR, "Async inference error: %s", e.what());
 		}
 	}
 }
