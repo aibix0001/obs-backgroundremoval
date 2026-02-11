@@ -70,7 +70,7 @@ struct background_removal_filter : public filter_data, public std::enable_shared
 };
 
 static void processImageForBackground(struct background_removal_filter *tf, const cv::Mat &imageBGRA,
-				       cv::Mat &backgroundMask);
+				      cv::Mat &backgroundMask);
 
 const char *background_filter_getname(void *unused)
 {
@@ -447,8 +447,8 @@ void *background_filter_create(obs_data_t *settings, obs_source_t *source)
 		// Detect GPU once at startup for adaptive defaults
 		if (detectGpu(instance->gpuInfo)) {
 			obs_log(LOG_INFO, "GPU: %s (%s), VRAM: %zu MB, default buffering: %s",
-				instance->gpuInfo.name.c_str(),
-				gpuArchitectureName(instance->gpuInfo.architecture), instance->gpuInfo.totalMemoryMB,
+				instance->gpuInfo.name.c_str(), gpuArchitectureName(instance->gpuInfo.architecture),
+				instance->gpuInfo.totalMemoryMB,
 				instance->gpuInfo.defaultBuffering == BufferingMode::TRIPLE ? "triple" : "double");
 		} else {
 			obs_log(LOG_WARNING, "GPU detection failed, using defaults");

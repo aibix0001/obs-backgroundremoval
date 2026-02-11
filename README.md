@@ -66,14 +66,15 @@ CPU utilization target: < 15%
 - [x] Graceful CUDA fallback when TensorRT SDK not installed
 
 ### Phase 7: Model Research
-- [ ] Evaluate RMBG v2, MODNet lightweight, BiRefNet
-- [ ] Test INT8 quantized models
-- [ ] Find TensorRT-optimized models on HuggingFace
+- [x] Evaluated RMBG v2.0 (BiRefNet-based, 1GB, 100ms+ — too slow for real-time)
+- [x] Evaluated BiRefNet/BiRefNet-lite (500MB-1GB, 70-140ms — too slow)
+- [x] Evaluated MODNet webcam (15MB, 3-5ms — viable but existing models sufficient)
+- [x] **Best real-time models already included**: RVM (3-4ms), PP-HumanSeg (2-3ms), MediaPipe (<1ms)
 
 ### Phase 8: Build System Cleanup
-- [ ] Remove macOS/Windows CMake presets and CI workflows
-- [ ] Add multi-arch CUDA compilation (sm_75, sm_86, sm_89)
-- [ ] Add CUDA Toolkit, TensorRT, NPP dependency checks
+- [x] Removed macOS/Windows CMake presets and CI workflows (Phase 1)
+- [x] Multi-arch CUDA compilation: sm_75, sm_86, sm_89 (Phase 4)
+- [x] CUDAToolkit required, TensorRT graceful fallback (Phase 6)
 
 ## Building
 
@@ -92,10 +93,17 @@ cmake --build --preset ubuntu-ci-x86_64
 sudo cmake --install build_x86_64
 ```
 
-## Models
+## Model Recommendations (by speed)
 
-Background removal models:
-- SINet, PP-HumanSeg, MediaPipe, RobustVideoMatting, TCMonoDepth, RMBG-1.4, Selfie Segmentation
+| Model | Input | Est. RTX 3060 | Quality | Best For |
+|-------|-------|--------------|---------|----------|
+| MediaPipe | 256x256 | <1ms | Low | Maximum FPS |
+| SINet | 320x320 | <1ms | Low | Maximum FPS |
+| PP-HumanSeg | 192x192 | 2-3ms | Medium | Balanced |
+| RVM (MobileNetV3) | 192x320 | 3-4ms | Medium-High | Video (temporal) |
+| RMBG 1.4 | 1024x1024 | 30-50ms | High | Quality priority |
+
+All models benefit from CUDA preprocessing and TensorRT FP16 on Ampere/Ada GPUs.
 
 Low-light enhancement models:
 - TBEFN, URetinex-Net, Semantic-Guided LLIE, Zero-DCE

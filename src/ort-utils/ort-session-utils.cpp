@@ -48,8 +48,7 @@ int createOrtSession(filter_data *tf)
 			std::string cachePath = getTrtCachePath(tf->modelFilepath);
 			bool useFP16 = (tf->gpuInfo.defaultPrecision == PrecisionMode::FP16);
 
-			obs_log(LOG_INFO, "TensorRT: cache=%s, FP16=%s", cachePath.c_str(),
-				useFP16 ? "yes" : "no");
+			obs_log(LOG_INFO, "TensorRT: cache=%s, FP16=%s", cachePath.c_str(), useFP16 ? "yes" : "no");
 
 			try {
 				const auto &api = Ort::GetApi();
@@ -78,8 +77,8 @@ int createOrtSession(filter_data *tf)
 					"3",
 				};
 				Ort::ThrowOnError(api.UpdateTensorRTProviderOptions(trtOpts, keys, values, 8));
-				Ort::ThrowOnError(api.SessionOptionsAppendExecutionProvider_TensorRT_V2(
-					sessionOptions, trtOpts));
+				Ort::ThrowOnError(
+					api.SessionOptionsAppendExecutionProvider_TensorRT_V2(sessionOptions, trtOpts));
 				api.ReleaseTensorRTProviderOptions(trtOpts);
 				obs_log(LOG_INFO, "TensorRT execution provider configured");
 			} catch (const std::exception &e) {
@@ -145,9 +144,8 @@ bool runFilterModelInference(filter_data *tf, const cv::Mat &imageBGRA, cv::Mat 
 	{
 		NVTX_RANGE_COLOR("cuda_preprocess", NVTX_COLOR_PREPROCESS);
 		PreprocessParams params = tf->model->getPreprocessParams();
-		tf->cudaPreprocessor.preprocess(imageBGRA.data, imageBGRA.cols, imageBGRA.rows,
-						(int)imageBGRA.step[0], tf->inputTensorValues[0].data(), inputWidth,
-						inputHeight, params);
+		tf->cudaPreprocessor.preprocess(imageBGRA.data, imageBGRA.cols, imageBGRA.rows, (int)imageBGRA.step[0],
+						tf->inputTensorValues[0].data(), inputWidth, inputHeight, params);
 	}
 
 	// Set model-specific extra tensor inputs (e.g., RVM downsample flag)

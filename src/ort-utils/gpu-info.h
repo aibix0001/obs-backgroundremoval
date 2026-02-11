@@ -6,8 +6,8 @@
 
 enum class GpuArchitecture {
 	UNKNOWN = 0,
-	TURING = 75,   // RTX 2000 series (sm_75)
-	AMPERE = 86,   // RTX 3000 series (sm_86)
+	TURING = 75,       // RTX 2000 series (sm_75)
+	AMPERE = 86,       // RTX 3000 series (sm_86)
 	ADA_LOVELACE = 89, // RTX 4000 series (sm_89)
 };
 
