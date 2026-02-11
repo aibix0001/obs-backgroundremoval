@@ -52,8 +52,8 @@ public:
 			outputDims.push_back(outputTensorInfo.GetShape());
 		}
 
-		const int base_width = 512;
-		const int base_height = 288;
+		const int base_width = 320;
+		const int base_height = 192;
 
 		inputDims[0][0] = 1;
 		inputDims[0][2] = base_height;
@@ -78,16 +78,14 @@ public:
 
 	virtual void setExtraTensorInputs(std::vector<std::vector<float>> &inputTensorValues)
 	{
-		// downsample_ratio: controls internal downsampling within the model.
-		// 0.375 with 512x288 input → 192x108 internal, good balance of quality vs speed.
-		inputTensorValues[5][0] = 0.375f;
+		inputTensorValues[5][0] = 1.0f;
 	}
 
 	virtual void loadInputToTensor(const cv::Mat &preprocessedImage, uint32_t, uint32_t,
 				       std::vector<std::vector<float>> &inputTensorValues)
 	{
 		inputTensorValues[0].assign(preprocessedImage.begin<float>(), preprocessedImage.end<float>());
-		inputTensorValues[5][0] = 0.375f;
+		inputTensorValues[5][0] = 1.0f;
 	}
 
 	virtual void assignOutputToInput(std::vector<std::vector<float>> &outputTensorValues,
