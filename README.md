@@ -28,9 +28,9 @@ CPU utilization target: < 15%
 ## Optimization Progress
 
 ### Phase 1: Remove Non-NVIDIA Code
-- [ ] Strip CPU, AMD (ROCm/MIGraphX), Intel, CoreML, DirectML execution providers
-- [ ] Remove macOS and Windows code paths
-- [ ] Keep only CUDA + TensorRT
+- [x] Strip CPU, AMD (ROCm/MIGraphX), Intel, CoreML, DirectML execution providers
+- [x] Remove macOS and Windows code paths
+- [x] Keep only CUDA + TensorRT
 
 ### Phase 2a: GPU Architecture Detection
 - [ ] Runtime NVIDIA GPU detection via CUDA API
