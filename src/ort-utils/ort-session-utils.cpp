@@ -8,6 +8,14 @@
 #include "plugin-support.h"
 #include "profiler.h"
 
+static std::string getTrtCachePath(const std::string &modelFilepath)
+{
+	std::filesystem::path modelPath(modelFilepath);
+	std::filesystem::path cacheDir = modelPath.parent_path() / "trt-cache";
+	std::filesystem::create_directories(cacheDir);
+	return cacheDir.string();
+}
+
 int createOrtSession(filter_data *tf)
 {
 	if (tf->model.get() == nullptr) {
@@ -35,11 +43,53 @@ int createOrtSession(filter_data *tf)
 	bfree(modelFilepath_rawPtr);
 
 	try {
-		if (tf->useGPU == USEGPU_CUDA) {
-			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(sessionOptions, 0));
-		}
 		if (tf->useGPU == USEGPU_TENSORRT) {
-			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_Tensorrt(sessionOptions, 0));
+			// TensorRT V2 API with FP16, engine caching, and CUDA fallback
+			std::string cachePath = getTrtCachePath(tf->modelFilepath);
+			bool useFP16 = (tf->gpuInfo.defaultPrecision == PrecisionMode::FP16);
+
+			obs_log(LOG_INFO, "TensorRT: cache=%s, FP16=%s", cachePath.c_str(),
+				useFP16 ? "yes" : "no");
+
+			try {
+				const auto &api = Ort::GetApi();
+				OrtTensorRTProviderOptionsV2 *trtOpts = nullptr;
+				Ort::ThrowOnError(api.CreateTensorRTProviderOptions(&trtOpts));
+
+				const char *keys[] = {
+					"device_id",
+					"trt_max_workspace_size",
+					"trt_fp16_enable",
+					"trt_engine_cache_enable",
+					"trt_engine_cache_path",
+					"trt_timing_cache_enable",
+					"trt_timing_cache_path",
+					"trt_builder_optimization_level",
+				};
+				std::string fp16Str = useFP16 ? "1" : "0";
+				const char *values[] = {
+					"0",
+					"2147483648",
+					fp16Str.c_str(),
+					"1",
+					cachePath.c_str(),
+					"1",
+					cachePath.c_str(),
+					"3",
+				};
+				Ort::ThrowOnError(api.UpdateTensorRTProviderOptions(trtOpts, keys, values, 8));
+				Ort::ThrowOnError(api.SessionOptionsAppendExecutionProvider_TensorRT_V2(
+					sessionOptions, trtOpts));
+				api.ReleaseTensorRTProviderOptions(trtOpts);
+				obs_log(LOG_INFO, "TensorRT execution provider configured");
+			} catch (const std::exception &e) {
+				obs_log(LOG_WARNING, "TensorRT EP failed: %s. Falling back to CUDA.", e.what());
+			}
+			// Always add CUDA as fallback (handles ops TensorRT doesn't support)
+			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(sessionOptions, 0));
+		} else {
+			// CUDA execution provider
+			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(sessionOptions, 0));
 		}
 		tf->session.reset(new Ort::Session(*tf->env, tf->modelFilepath.c_str(), sessionOptions));
 	} catch (const std::exception &e) {
