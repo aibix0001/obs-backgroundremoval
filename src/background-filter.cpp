@@ -26,6 +26,7 @@
 #include "models/ModelRMBG.h"
 #include "FilterData.h"
 #include "ort-utils/ort-session-utils.h"
+#include "ort-utils/async-inference-queue.h"
 #include "obs-utils/obs-utils.h"
 #include "consts.h"
 #include "update-checker/update-checker.h"
@@ -58,10 +59,18 @@ struct background_removal_filter : public filter_data, public std::enable_shared
 
 	std::mutex modelMutex;
 
-	~background_removal_filter() { obs_log(LOG_INFO, "Background removal filter destructor called"); }
+	// Async inference queue — decouples inference from video pipeline
+	AsyncInferenceQueue asyncQueue;
+
+	~background_removal_filter()
+	{
+		asyncQueue.stop();
+		obs_log(LOG_INFO, "Background removal filter destructor called");
+	}
 };
 
-void background_removal_thread(void *data); // Forward declaration
+static void processImageForBackground(struct background_removal_filter *tf, const cv::Mat &imageBGRA,
+				       cv::Mat &backgroundMask);
 
 const char *background_filter_getname(void *unused)
 {
@@ -264,6 +273,9 @@ void background_filter_update(void *data, obs_data_t *settings)
 
 	tf->isDisabled = true;
 
+	// Stop async queue before any model changes to avoid deadlock with modelMutex
+	tf->asyncQueue.stop();
+
 	tf->stopWhenSourceIsInactive = obs_data_get_bool(settings, "stop_when_source_is_inactive");
 	tf->enableThreshold = (float)obs_data_get_bool(settings, "enable_threshold");
 	tf->threshold = (float)obs_data_get_double(settings, "threshold");
@@ -288,7 +300,7 @@ void background_filter_update(void *data, obs_data_t *settings)
 
 	if (tf->modelSelection.empty() || tf->modelSelection != newModel || tf->useGPU != newUseGpu ||
 	    tf->numThreads != newNumThreads) {
-		// lock modelMutex
+		// lock modelMutex — safe because async queue is stopped
 		std::unique_lock<std::mutex> lock(tf->modelMutex);
 
 		// Re-initialize model if it's not already the selected one or switching inference device
@@ -368,6 +380,21 @@ void background_filter_update(void *data, obs_data_t *settings)
 	obs_log(LOG_INFO, "  Disabled: %s", tf->isDisabled ? "true" : "false");
 	obs_log(LOG_INFO, "  Model file path: %s", tf->modelFilepath.c_str());
 
+	// Start async inference queue with the current model
+	{
+		auto *raw_tf = tf.get();
+		tf->asyncQueue.start(
+			[raw_tf](const cv::Mat &inputBGRA, cv::Mat &outputMask) -> bool {
+				std::unique_lock<std::mutex> lock(raw_tf->modelMutex);
+				if (!raw_tf->model || !raw_tf->session) {
+					return false;
+				}
+				processImageForBackground(raw_tf, inputBGRA, outputMask);
+				return !outputMask.empty();
+			},
+			tf->gpuInfo.defaultBuffering);
+	}
+
 	// enable
 	tf->isDisabled = false;
 }
@@ -417,6 +444,16 @@ void *background_filter_create(obs_data_t *settings, obs_source_t *source)
 
 		instance->modelSelection = MODEL_MEDIAPIPE;
 
+		// Detect GPU once at startup for adaptive defaults
+		if (detectGpu(instance->gpuInfo)) {
+			obs_log(LOG_INFO, "GPU: %s (%s), VRAM: %zu MB, default buffering: %s",
+				instance->gpuInfo.name.c_str(),
+				gpuArchitectureName(instance->gpuInfo.architecture), instance->gpuInfo.totalMemoryMB,
+				instance->gpuInfo.defaultBuffering == BufferingMode::TRIPLE ? "triple" : "double");
+		} else {
+			obs_log(LOG_WARNING, "GPU detection failed, using defaults");
+		}
+
 		// Create pointer to shared_ptr for the update call
 		auto ptr = new std::shared_ptr<background_removal_filter>(instance);
 		background_filter_update(ptr, settings);
@@ -440,6 +477,9 @@ void background_filter_destroy(void *data)
 		if (*ptr) {
 			// Mark as disabled to prevent further processing
 			(*ptr)->isDisabled = true;
+
+			// Stop async queue first — joins worker thread before any cleanup
+			(*ptr)->asyncQueue.stop();
 
 			// Perform cleanup
 			obs_enter_graphics();
@@ -500,8 +540,7 @@ void background_filter_video_tick(void *data, float seconds)
 		return;
 	}
 
-	if (!tf->model) {
-		obs_log(LOG_ERROR, "Model is not initialized");
+	if (!tf->asyncQueue.isRunning()) {
 		return;
 	}
 
@@ -509,137 +548,131 @@ void background_filter_video_tick(void *data, float seconds)
 	{
 		std::unique_lock<std::mutex> lock(tf->inputBGRALock, std::try_to_lock);
 		if (!lock.owns_lock()) {
-			// No data to process
 			return;
 		}
 		if (tf->inputBGRA.empty()) {
-			// No data to process
 			return;
 		}
 		imageBGRA = tf->inputBGRA.clone();
 	}
 
-	if (tf->enableImageSimilarity) {
-		if (!tf->lastImageBGRA.empty() && !imageBGRA.empty() && tf->lastImageBGRA.size() == imageBGRA.size()) {
-			// calculate PSNR
-			double psnr = cv::PSNR(tf->lastImageBGRA, imageBGRA);
+	// Initialize background mask if empty (first frame, before any inference completes)
+	{
+		std::lock_guard<std::mutex> lock(tf->outputLock);
+		if (tf->backgroundMask.empty()) {
+			tf->backgroundMask = cv::Mat(imageBGRA.size(), CV_8UC1, cv::Scalar(255));
+		}
+	}
 
+	// Image similarity check — skip pushing if the frame hasn't changed significantly
+	bool shouldPush = true;
+	if (tf->enableImageSimilarity) {
+		if (!tf->lastImageBGRA.empty() && !imageBGRA.empty() &&
+		    tf->lastImageBGRA.size() == imageBGRA.size()) {
+			double psnr = cv::PSNR(tf->lastImageBGRA, imageBGRA);
 			if (psnr > tf->imageSimilarityThreshold) {
-				// The image is almost the same as the previous one. Skip processing.
-				return;
+				shouldPush = false;
 			}
 		}
-		tf->lastImageBGRA = imageBGRA.clone();
+		if (shouldPush) {
+			tf->lastImageBGRA = imageBGRA.clone();
+		}
 	}
 
-	if (tf->backgroundMask.empty()) {
-		// First frame. Initialize the background mask.
-		tf->backgroundMask = cv::Mat(imageBGRA.size(), CV_8UC1, cv::Scalar(255));
-	}
-
+	// Frame skip — reduce push frequency
 	tf->maskEveryXFramesCount++;
 	tf->maskEveryXFramesCount %= tf->maskEveryXFrames;
+	if (tf->maskEveryXFramesCount != 0) {
+		shouldPush = false;
+	}
 
+	// Push frame to async queue (non-blocking, drops if worker is busy)
+	if (shouldPush) {
+		tf->asyncQueue.pushFrame(imageBGRA);
+	}
+
+	// Pull latest completed mask from worker thread
+	cv::Mat rawMask;
+	if (!tf->asyncQueue.getLatestMask(rawMask)) {
+		// No new inference result yet — video_render uses previous backgroundMask
+		return;
+	}
+
+	// Apply postprocessing to the raw mask (cheap CPU operations)
 	try {
-		if (tf->maskEveryXFramesCount != 0 && !tf->backgroundMask.empty()) {
-			// We are skipping processing of the mask for this frame.
-			// Get the background mask previously generated.
-			; // Do nothing
-		} else {
-			cv::Mat backgroundMask;
+		NVTX_RANGE_COLOR("postprocess_mask", NVTX_COLOR_POSTPROCESS);
+		cv::Mat backgroundMask = rawMask;
 
-			{
-				std::unique_lock<std::mutex> lock(tf->modelMutex);
-				// Process the image to find the mask.
-				processImageForBackground(tf.get(), imageBGRA, backgroundMask);
-			}
+		// Temporal smoothing
+		if (tf->temporalSmoothFactor > 0.0 && tf->temporalSmoothFactor < 1.0 &&
+		    !tf->lastBackgroundMask.empty() && tf->lastBackgroundMask.size() == backgroundMask.size()) {
 
-			if (backgroundMask.empty()) {
-				// Something went wrong. Just use the previous mask.
-				obs_log(LOG_WARNING,
-					"Background mask is empty. This shouldn't happen. Using previous mask.");
-				return;
-			}
-
-			// Temporal smoothing
-			if (tf->temporalSmoothFactor > 0.0 && tf->temporalSmoothFactor < 1.0 &&
-			    !tf->lastBackgroundMask.empty() && tf->lastBackgroundMask.size() == backgroundMask.size()) {
-
-				float temporalSmoothFactor = tf->temporalSmoothFactor;
-				if (tf->enableThreshold) {
-					// The temporal smooth factor can't be smaller than the threshold
-					temporalSmoothFactor = std::max(temporalSmoothFactor, tf->threshold);
-				}
-
-				cv::addWeighted(backgroundMask, temporalSmoothFactor, tf->lastBackgroundMask,
-						1.0 - temporalSmoothFactor, 0.0, backgroundMask);
-			}
-
-			tf->lastBackgroundMask = backgroundMask.clone();
-
-			// Contour processing
-			// Only applicable if we are thresholding (and get a binary image)
+			float temporalSmoothFactor = tf->temporalSmoothFactor;
 			if (tf->enableThreshold) {
-				if (tf->contourFilter > 0.0 && tf->contourFilter < 1.0) {
-					std::vector<std::vector<cv::Point>> contours;
-					findContours(backgroundMask, contours, cv::RETR_EXTERNAL,
-						     cv::CHAIN_APPROX_SIMPLE);
-					std::vector<std::vector<cv::Point>> filteredContours;
-					const double contourSizeThreshold =
-						(double)(backgroundMask.total()) * tf->contourFilter;
-					for (auto &contour : contours) {
-						if (cv::contourArea(contour) > (double)contourSizeThreshold) {
-							filteredContours.push_back(contour);
-						}
+				temporalSmoothFactor = std::max(temporalSmoothFactor, tf->threshold);
+			}
+
+			cv::addWeighted(backgroundMask, temporalSmoothFactor, tf->lastBackgroundMask,
+					1.0 - temporalSmoothFactor, 0.0, backgroundMask);
+		}
+
+		tf->lastBackgroundMask = backgroundMask.clone();
+
+		// Contour processing — only applicable with thresholding
+		if (tf->enableThreshold) {
+			if (tf->contourFilter > 0.0 && tf->contourFilter < 1.0) {
+				std::vector<std::vector<cv::Point>> contours;
+				findContours(backgroundMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+				std::vector<std::vector<cv::Point>> filteredContours;
+				const double contourSizeThreshold =
+					(double)(backgroundMask.total()) * tf->contourFilter;
+				for (auto &contour : contours) {
+					if (cv::contourArea(contour) > contourSizeThreshold) {
+						filteredContours.push_back(contour);
 					}
-					backgroundMask.setTo(0);
-					drawContours(backgroundMask, filteredContours, -1, cv::Scalar(255), -1);
 				}
-
-				if (tf->smoothContour > 0.0) {
-					int k_size = (int)(3 + 11 * tf->smoothContour);
-					k_size += k_size % 2 == 0 ? 1 : 0;
-					cv::stackBlur(backgroundMask, backgroundMask, cv::Size(k_size, k_size));
-				}
-
-				// Resize the size of the mask back to the size of the original input.
-				cv::resize(backgroundMask, backgroundMask, imageBGRA.size());
-
-				// Additional contour processing at full resolution
-				if (tf->smoothContour > 0.0) {
-					// If the mask was smoothed, apply a threshold to get a binary mask
-					backgroundMask = backgroundMask > 128;
-				}
-
-				// Expand or shrink the mask
-				if (tf->maskExpansion > 0.0) {
-					cv::erode(backgroundMask, backgroundMask, cv::Mat(), cv::Point(-1, -1),
-						  tf->maskExpansion);
-				} else if (tf->maskExpansion < 0.0) {
-					cv::dilate(backgroundMask, backgroundMask, cv::Mat(), cv::Point(-1, -1),
-						   -tf->maskExpansion);
-				}
-
-				if (tf->feather > 0.0) {
-					// Feather (blur) the mask
-					int k_size = (int)(40 * tf->feather);
-					k_size += k_size % 2 == 0 ? 1 : 0;
-					cv::dilate(backgroundMask, backgroundMask, cv::Mat(), cv::Point(-1, -1),
-						   k_size / 3);
-					cv::boxFilter(backgroundMask, backgroundMask, tf->backgroundMask.depth(),
-						      cv::Size(k_size, k_size));
-				}
+				backgroundMask.setTo(0);
+				drawContours(backgroundMask, filteredContours, -1, cv::Scalar(255), -1);
 			}
 
-			// Save the mask for the next frame
-			{
-				std::lock_guard<std::mutex> lock(tf->outputLock);
-				backgroundMask.copyTo(tf->backgroundMask);
+			if (tf->smoothContour > 0.0) {
+				int k_size = (int)(3 + 11 * tf->smoothContour);
+				k_size += k_size % 2 == 0 ? 1 : 0;
+				cv::stackBlur(backgroundMask, backgroundMask, cv::Size(k_size, k_size));
 			}
+
+			// Resize mask to current frame size
+			cv::resize(backgroundMask, backgroundMask, imageBGRA.size());
+
+			if (tf->smoothContour > 0.0) {
+				backgroundMask = backgroundMask > 128;
+			}
+
+			// Expand or shrink the mask
+			if (tf->maskExpansion > 0) {
+				cv::erode(backgroundMask, backgroundMask, cv::Mat(), cv::Point(-1, -1),
+					  tf->maskExpansion);
+			} else if (tf->maskExpansion < 0) {
+				cv::dilate(backgroundMask, backgroundMask, cv::Mat(), cv::Point(-1, -1),
+					   -tf->maskExpansion);
+			}
+
+			if (tf->feather > 0.0) {
+				int k_size = (int)(40 * tf->feather);
+				k_size += k_size % 2 == 0 ? 1 : 0;
+				cv::dilate(backgroundMask, backgroundMask, cv::Mat(), cv::Point(-1, -1), k_size / 3);
+				cv::boxFilter(backgroundMask, backgroundMask, backgroundMask.depth(),
+					      cv::Size(k_size, k_size));
+			}
+		}
+
+		// Publish final mask for video_render
+		{
+			std::lock_guard<std::mutex> lock(tf->outputLock);
+			backgroundMask.copyTo(tf->backgroundMask);
 		}
 	} catch (const Ort::Exception &e) {
 		obs_log(LOG_ERROR, "ONNXRuntime Exception: %s", e.what());
-		// TODO: Fall back to CPU if it makes sense
 	} catch (const std::exception &e) {
 		obs_log(LOG_ERROR, "%s", e.what());
 	}

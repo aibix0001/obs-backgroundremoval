@@ -8,6 +8,7 @@
 
 #include "models/Model.h"
 #include "ort-utils/ORTModelData.h"
+#include "ort-utils/gpu-info.h"
 
 /**
   * @brief The filter_data struct
@@ -33,6 +34,9 @@ struct filter_data : public ORTModelData, public std::enable_shared_from_this<fi
 	std::mutex outputLock;
 
 	std::string modelFilepath;
+
+	// GPU architecture info (detected once at startup)
+	GpuInfo gpuInfo;
 };
 
 #endif /* FILTERDATA_H */

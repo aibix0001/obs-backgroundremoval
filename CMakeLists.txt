@@ -119,6 +119,7 @@ target_sources(
     src/plugin-main.c
     src/ort-utils/ort-session-utils.cpp
     src/ort-utils/gpu-info.cpp
+    src/ort-utils/async-inference-queue.cpp
     src/obs-utils/obs-utils.cpp
     src/obs-utils/obs-config-utils.cpp
     src/update-checker/github-utils.cpp
