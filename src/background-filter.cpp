@@ -579,9 +579,14 @@ void background_filter_video_tick(void *data, float seconds)
 				return;
 			}
 
-			// Resize model output (320x192) to frame size
+			// With DGF refiner, output is already at source resolution.
+			// Only resize if dimensions don't match (e.g. different source size).
 			cv::Mat finalMask;
-			cv::resize(rawMask, finalMask, frameSize, 0, 0, cv::INTER_LINEAR);
+			if (rawMask.size() == frameSize) {
+				finalMask = rawMask;
+			} else {
+				cv::resize(rawMask, finalMask, frameSize, 0, 0, cv::INTER_LINEAR);
+			}
 
 			// Publish for video_render
 			{
