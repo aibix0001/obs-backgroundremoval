@@ -76,6 +76,15 @@ CPU utilization target: < 15%
 - [x] Multi-arch CUDA compilation: sm_75, sm_86, sm_89 (Phase 4)
 - [x] CUDAToolkit required, TensorRT graceful fallback (Phase 6)
 
+### Phase 9: Alpha Matte Pipeline (Maxine-Quality Masking)
+- [x] Downloaded RVM MobileNetV3 FP16 model (7MB, half the size of FP32)
+- [x] Added `outputsAlphaMatte()` virtual to Model base — RVM preserves continuous alpha
+- [x] Skip binarization for alpha-matte models — soft edges instead of hard 0/255 cutoff
+- [x] Increased RVM input resolution from 320x192 to 512x288 (downsample_ratio=0.375)
+- [x] Guided filter edge refinement — aligns mask edges to real image edges (hair, clothing)
+- [x] Registered RVM FP16 in UI, set as default model
+- [x] Tuned temporal smoothing to 0.7 (ConvGRU handles internal temporal stability)
+
 ## Building
 
 ```bash
