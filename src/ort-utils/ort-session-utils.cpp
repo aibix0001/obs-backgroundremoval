@@ -1,15 +1,5 @@
 #include <onnxruntime_cxx_api.h>
-#include <cpu_provider_factory.h>
 #include <filesystem>
-
-#if defined(__APPLE__)
-#include <coreml_provider_factory.h>
-#endif
-
-#ifdef _WIN32
-#include <wchar.h>
-#include <windows.h>
-#endif // _WIN32
 
 #include <obs-module.h>
 
@@ -27,13 +17,8 @@ int createOrtSession(filter_data *tf)
 	Ort::SessionOptions sessionOptions;
 
 	sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-	if (tf->useGPU != USEGPU_CPU) {
-		sessionOptions.DisableMemPattern();
-		sessionOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
-	} else {
-		sessionOptions.SetInterOpNumThreads(tf->numThreads);
-		sessionOptions.SetIntraOpNumThreads(tf->numThreads);
-	}
+	sessionOptions.DisableMemPattern();
+	sessionOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
 
 	char *modelFilepath_rawPtr = obs_module_file(tf->modelSelection.c_str());
 
@@ -44,13 +29,7 @@ int createOrtSession(filter_data *tf)
 
 	std::string modelFilepath_s(modelFilepath_rawPtr);
 
-#if _WIN32
-	int outLength = MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, modelFilepath_rawPtr, -1, nullptr, 0);
-	tf->modelFilepath = std::wstring(outLength, L'\0');
-	MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, modelFilepath_rawPtr, -1, tf->modelFilepath.data(), outLength);
-#else
 	tf->modelFilepath = std::string(modelFilepath_rawPtr);
-#endif
 
 	bfree(modelFilepath_rawPtr);
 
@@ -60,27 +39,9 @@ int createOrtSession(filter_data *tf)
 			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(sessionOptions, 0));
 		}
 #endif
-#ifdef HAVE_ONNXRUNTIME_ROCM_EP
-		if (tf->useGPU == USEGPU_ROCM) {
-			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_ROCM(sessionOptions, 0));
-		}
-#endif
-#ifdef HAVE_ONNXRUNTIME_MIGRAPHX_EP
-		if (tf->useGPU == USEGPU_MIGRAPHX) {
-			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_MIGraphX(sessionOptions, 0));
-		}
-#endif
 #ifdef HAVE_ONNXRUNTIME_TENSORRT_EP
 		if (tf->useGPU == USEGPU_TENSORRT) {
 			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_Tensorrt(sessionOptions, 0));
-		}
-#endif
-#if defined(__APPLE__)
-		if (tf->useGPU == USEGPU_COREML) {
-			uint32_t coreml_flags = 0;
-			coreml_flags |= COREML_FLAG_ENABLE_ON_SUBGRAPH;
-			Ort::ThrowOnError(
-				OrtSessionOptionsAppendExecutionProvider_CoreML(sessionOptions, coreml_flags));
 		}
 #endif
 		tf->session.reset(new Ort::Session(*tf->env, tf->modelFilepath.c_str(), sessionOptions));

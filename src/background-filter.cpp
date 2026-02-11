@@ -2,10 +2,6 @@
 
 #include <onnxruntime_cxx_api.h>
 
-#ifdef _WIN32
-#include <wchar.h>
-#endif // _WIN32
-
 #include <opencv2/imgproc.hpp>
 
 #include <numeric>
@@ -163,21 +159,11 @@ obs_properties_t *background_filter_properties(void *data)
 	obs_property_t *p_use_gpu = obs_properties_add_list(props, "useGPU", obs_module_text("InferenceDevice"),
 							    OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 
-	obs_property_list_add_string(p_use_gpu, obs_module_text("CPU"), USEGPU_CPU);
 #ifdef HAVE_ONNXRUNTIME_CUDA_EP
 	obs_property_list_add_string(p_use_gpu, obs_module_text("GPUCUDA"), USEGPU_CUDA);
 #endif
-#ifdef HAVE_ONNXRUNTIME_ROCM_EP
-	obs_property_list_add_string(p_use_gpu, obs_module_text("GPUROCM"), USEGPU_ROCM);
-#endif
-#ifdef HAVE_ONNXRUNTIME_MIGRAPHX_EP
-	obs_property_list_add_string(p_use_gpu, obs_module_text("GPUMIGRAPHX"), USEGPU_MIGRAPHX);
-#endif
 #ifdef HAVE_ONNXRUNTIME_TENSORRT_EP
 	obs_property_list_add_string(p_use_gpu, obs_module_text("TENSORRT"), USEGPU_TENSORRT);
-#endif
-#if defined(__APPLE__)
-	obs_property_list_add_string(p_use_gpu, obs_module_text("CoreML"), USEGPU_COREML);
 #endif
 
 	obs_properties_add_int(props, "mask_every_x_frames", obs_module_text("CalculateMaskEveryXFrame"), 1, 300, 1);
@@ -250,12 +236,7 @@ void background_filter_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "smooth_contour", 0.5);
 	obs_data_set_default_double(settings, "mask_expansion", 0);
 	obs_data_set_default_double(settings, "feather", 0.0);
-#if defined(__APPLE__)
-	obs_data_set_default_string(settings, "useGPU", USEGPU_CPU);
-#else
-	// Linux
-	obs_data_set_default_string(settings, "useGPU", USEGPU_CPU);
-#endif
+	obs_data_set_default_string(settings, "useGPU", USEGPU_CUDA);
 	obs_data_set_default_string(settings, "model_select", MODEL_MEDIAPIPE);
 	obs_data_set_default_int(settings, "mask_every_x_frames", 1);
 	obs_data_set_default_int(settings, "blur_background", 0);
@@ -387,11 +368,7 @@ void background_filter_update(void *data, obs_data_t *settings)
 	obs_log(LOG_INFO, "  Blur Focus Point: %f", tf->blurFocusPoint);
 	obs_log(LOG_INFO, "  Blur Focus Depth: %f", tf->blurFocusDepth);
 	obs_log(LOG_INFO, "  Disabled: %s", tf->isDisabled ? "true" : "false");
-#ifdef _WIN32
-	obs_log(LOG_INFO, "  Model file path: %S", tf->modelFilepath.c_str());
-#else
 	obs_log(LOG_INFO, "  Model file path: %s", tf->modelFilepath.c_str());
-#endif
 
 	// enable
 	tf->isDisabled = false;

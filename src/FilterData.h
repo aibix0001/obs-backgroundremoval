@@ -32,11 +32,7 @@ struct filter_data : public ORTModelData, public std::enable_shared_from_this<fi
 	std::mutex inputBGRALock;
 	std::mutex outputLock;
 
-#if _WIN32
-	std::wstring modelFilepath;
-#else
 	std::string modelFilepath;
-#endif
 };
 
 #endif /* FILTERDATA_H */

@@ -2,10 +2,6 @@
 
 #include <onnxruntime_cxx_api.h>
 
-#ifdef _WIN32
-#include <wchar.h>
-#endif // _WIN32
-
 #include <opencv2/imgproc.hpp>
 
 #include <numeric>
@@ -56,21 +52,11 @@ obs_properties_t *enhance_filter_properties(void *data)
 	obs_property_list_add_string(p_model_select, obs_module_text("ZERODCE"), MODEL_ENHANCE_ZERODCE);
 	obs_property_t *p_use_gpu = obs_properties_add_list(props, "useGPU", obs_module_text("InferenceDevice"),
 							    OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-	obs_property_list_add_string(p_use_gpu, obs_module_text("CPU"), USEGPU_CPU);
 #ifdef HAVE_ONNXRUNTIME_CUDA_EP
 	obs_property_list_add_string(p_use_gpu, obs_module_text("GPUCUDA"), USEGPU_CUDA);
 #endif
-#ifdef HAVE_ONNXRUNTIME_ROCM_EP
-	obs_property_list_add_string(p_use_gpu, obs_module_text("GPUROCM"), USEGPU_ROCM);
-#endif
-#ifdef HAVE_ONNXRUNTIME_MIGRAPHX_EP
-	obs_property_list_add_string(p_use_gpu, obs_module_text("GPUMIGRAPHX"), USEGPU_MIGRAPHX);
-#endif
 #ifdef HAVE_ONNXRUNTIME_TENSORRT_EP
 	obs_property_list_add_string(p_use_gpu, obs_module_text("TENSORRT"), USEGPU_TENSORRT);
-#endif
-#if defined(__APPLE__)
-	obs_property_list_add_string(p_use_gpu, obs_module_text("CoreML"), USEGPU_COREML);
 #endif
 
 	// Add a informative text about the plugin
@@ -91,12 +77,7 @@ void enhance_filter_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, "blend", 1.0);
 	obs_data_set_default_int(settings, "numThreads", 1);
 	obs_data_set_default_string(settings, "model_select", MODEL_ENHANCE_TBEFN);
-#if defined(__APPLE__)
-	obs_data_set_default_string(settings, "useGPU", USEGPU_CPU);
-#else
-	// Linux
-	obs_data_set_default_string(settings, "useGPU", USEGPU_CPU);
-#endif
+	obs_data_set_default_string(settings, "useGPU", USEGPU_CUDA);
 }
 
 void enhance_filter_activate(void *data)
