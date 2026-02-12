@@ -301,7 +301,7 @@ void background_filter_update(void *data, obs_data_t *settings)
 	const uint32_t newNumThreads = (uint32_t)obs_data_get_int(settings, "numThreads");
 
 	if (tf->modelSelection.empty() || tf->modelSelection != newModel || tf->useGPU != newUseGpu ||
-	    tf->numThreads != newNumThreads) {
+	    tf->numThreads != newNumThreads || !tf->model || !tf->session) {
 		// lock modelMutex — safe because async queue is stopped
 		std::unique_lock<std::mutex> lock(tf->modelMutex);
 

@@ -8,10 +8,22 @@
 #include "plugin-support.h"
 #include "profiler.h"
 
-static std::string getTrtCachePath(const std::string &modelFilepath)
+static std::string getTrtCachePath()
 {
-	std::filesystem::path modelPath(modelFilepath);
-	std::filesystem::path cacheDir = modelPath.parent_path() / "trt-cache";
+	// Use a user-writable cache directory — the model data dir (/usr/share/...)
+	// is root-owned and not writable by the plugin at runtime.
+	const char *cacheHome = std::getenv("XDG_CACHE_HOME");
+	std::filesystem::path cacheDir;
+	if (cacheHome && cacheHome[0] != '\0') {
+		cacheDir = std::filesystem::path(cacheHome) / "obs-backgroundremoval" / "trt-cache";
+	} else {
+		const char *home = std::getenv("HOME");
+		if (home) {
+			cacheDir = std::filesystem::path(home) / ".cache" / "obs-backgroundremoval" / "trt-cache";
+		} else {
+			cacheDir = std::filesystem::path("/tmp") / "obs-backgroundremoval-trt-cache";
+		}
+	}
 	std::filesystem::create_directories(cacheDir);
 	return cacheDir.string();
 }
@@ -45,12 +57,13 @@ int createOrtSession(filter_data *tf)
 	try {
 		if (tf->useGPU == USEGPU_TENSORRT) {
 			// TensorRT V2 API with FP16, engine caching, and CUDA fallback
-			std::string cachePath = getTrtCachePath(tf->modelFilepath);
-			bool useFP16 = (tf->gpuInfo.defaultPrecision == PrecisionMode::FP16);
-
-			obs_log(LOG_INFO, "TensorRT: cache=%s, FP16=%s", cachePath.c_str(), useFP16 ? "yes" : "no");
-
 			try {
+				std::string cachePath = getTrtCachePath();
+				bool useFP16 = (tf->gpuInfo.defaultPrecision == PrecisionMode::FP16);
+
+				obs_log(LOG_INFO, "TensorRT: cache=%s, FP16=%s", cachePath.c_str(),
+					useFP16 ? "yes" : "no");
+
 				const auto &api = Ort::GetApi();
 				OrtTensorRTProviderOptionsV2 *trtOpts = nullptr;
 				Ort::ThrowOnError(api.CreateTensorRTProviderOptions(&trtOpts));
