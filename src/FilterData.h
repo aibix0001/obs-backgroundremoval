@@ -30,6 +30,7 @@ struct filter_data : public ORTModelData, public std::enable_shared_from_this<fi
 	cv::Mat inputBGRA;
 
 	std::atomic<bool> isDisabled{false};
+	std::atomic<bool> trtInferenceFailed{false};
 
 	std::mutex inputBGRALock;
 	std::mutex outputLock;

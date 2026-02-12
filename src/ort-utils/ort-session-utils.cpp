@@ -68,7 +68,10 @@ int createOrtSession(filter_data *tf)
 				OrtTensorRTProviderOptionsV2 *trtOpts = nullptr;
 				Ort::ThrowOnError(api.CreateTensorRTProviderOptions(&trtOpts));
 
-				const char *keys[] = {
+				// Get model-specific TRT optimization profile shapes
+				std::string profileShapes = tf->model->getTrtProfileShapes();
+
+				std::vector<const char *> keys = {
 					"device_id",
 					"trt_max_workspace_size",
 					"trt_fp16_enable",
@@ -79,7 +82,7 @@ int createOrtSession(filter_data *tf)
 					"trt_builder_optimization_level",
 				};
 				std::string fp16Str = useFP16 ? "1" : "0";
-				const char *values[] = {
+				std::vector<const char *> values = {
 					"0",
 					"2147483648",
 					fp16Str.c_str(),
@@ -89,7 +92,21 @@ int createOrtSession(filter_data *tf)
 					cachePath.c_str(),
 					"3",
 				};
-				Ort::ThrowOnError(api.UpdateTensorRTProviderOptions(trtOpts, keys, values, 8));
+
+				// Provide explicit optimization profiles so TRT knows
+				// the exact shapes for all dynamic inputs (min=opt=max).
+				if (!profileShapes.empty()) {
+					obs_log(LOG_INFO, "TensorRT profile shapes: %s", profileShapes.c_str());
+					keys.push_back("trt_profile_min_shapes");
+					values.push_back(profileShapes.c_str());
+					keys.push_back("trt_profile_max_shapes");
+					values.push_back(profileShapes.c_str());
+					keys.push_back("trt_profile_opt_shapes");
+					values.push_back(profileShapes.c_str());
+				}
+
+				Ort::ThrowOnError(api.UpdateTensorRTProviderOptions(trtOpts, keys.data(), values.data(),
+										    keys.size()));
 				Ort::ThrowOnError(
 					api.SessionOptionsAppendExecutionProvider_TensorRT_V2(sessionOptions, trtOpts));
 				api.ReleaseTensorRTProviderOptions(trtOpts);
@@ -105,8 +122,27 @@ int createOrtSession(filter_data *tf)
 		}
 		tf->session.reset(new Ort::Session(*tf->env, tf->modelFilepath.c_str(), sessionOptions));
 	} catch (const std::exception &e) {
-		obs_log(LOG_ERROR, "%s", e.what());
-		return OBS_BGREMOVAL_ORT_SESSION_ERROR_STARTUP;
+		if (tf->useGPU == USEGPU_TENSORRT) {
+			// TRT can fail during session init (e.g. missing shape info on
+			// intermediate nodes). Retry with CUDA-only so the filter still works.
+			obs_log(LOG_WARNING, "TensorRT session failed: %s", e.what());
+			obs_log(LOG_WARNING, "Retrying with CUDA-only execution provider.");
+			try {
+				Ort::SessionOptions cudaOptions;
+				cudaOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+				cudaOptions.DisableMemPattern();
+				cudaOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+				Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(cudaOptions, 0));
+				tf->session.reset(new Ort::Session(*tf->env, tf->modelFilepath.c_str(), cudaOptions));
+				obs_log(LOG_INFO, "CUDA fallback session created successfully");
+			} catch (const std::exception &e2) {
+				obs_log(LOG_ERROR, "CUDA fallback also failed: %s", e2.what());
+				return OBS_BGREMOVAL_ORT_SESSION_ERROR_STARTUP;
+			}
+		} else {
+			obs_log(LOG_ERROR, "%s", e.what());
+			return OBS_BGREMOVAL_ORT_SESSION_ERROR_STARTUP;
+		}
 	}
 
 	Ort::AllocatorWithDefaultOptions allocator;

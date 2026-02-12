@@ -551,6 +551,25 @@ void background_filter_video_tick(void *data, float seconds)
 		return;
 	}
 
+	// Runtime TRT→CUDA fallback: if TRT inference failed, recreate session with CUDA
+	if (tf->trtInferenceFailed.exchange(false)) {
+		obs_log(LOG_WARNING, "TensorRT inference failed at runtime. Recreating session with CUDA.");
+		std::unique_lock<std::mutex> modelLock(tf->modelMutex);
+		try {
+			Ort::SessionOptions cudaOptions;
+			cudaOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+			cudaOptions.DisableMemPattern();
+			cudaOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+			Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(cudaOptions, 0));
+			tf->session.reset(new Ort::Session(*tf->env, tf->modelFilepath.c_str(), cudaOptions));
+			obs_log(LOG_INFO, "CUDA fallback session created successfully (runtime)");
+		} catch (const std::exception &e) {
+			obs_log(LOG_ERROR, "CUDA fallback session failed: %s", e.what());
+			tf->isDisabled = true;
+			return;
+		}
+	}
+
 	if (tf->isAlphaMatteModel) {
 		// Synchronous inference path for alpha-matte models (e.g. RVM).
 		// Runs inference directly in video_tick to eliminate async pipeline
@@ -595,8 +614,14 @@ void background_filter_video_tick(void *data, float seconds)
 			}
 		} catch (const Ort::Exception &e) {
 			obs_log(LOG_ERROR, "Sync inference ONNXRuntime error: %s", e.what());
+			if (tf->useGPU == USEGPU_TENSORRT) {
+				tf->trtInferenceFailed = true;
+			}
 		} catch (const std::exception &e) {
 			obs_log(LOG_ERROR, "Sync inference error: %s", e.what());
+			if (tf->useGPU == USEGPU_TENSORRT) {
+				tf->trtInferenceFailed = true;
+			}
 		}
 		return;
 	}

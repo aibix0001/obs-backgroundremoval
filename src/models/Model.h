@@ -228,6 +228,11 @@ public:
 	// When true, the alpha output is used directly as the mask without binarization.
 	virtual bool outputsAlphaMatte() const { return false; }
 
+	// Return TensorRT optimization profile shapes string for all inputs.
+	// Format: "name:d0xd1x...,name:d0xd1x..."  (min=opt=max since shapes are fixed).
+	// Default returns empty string (no explicit profiles).
+	virtual std::string getTrtProfileShapes() const { return ""; }
+
 	// Get CUDA preprocessing parameters for this model.
 	// Default: standard /255 normalization in HWC format.
 	virtual PreprocessParams getPreprocessParams() const

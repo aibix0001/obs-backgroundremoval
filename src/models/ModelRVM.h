@@ -23,6 +23,23 @@ public:
 
 	virtual bool outputsAlphaMatte() const { return true; }
 
+	virtual std::string getTrtProfileShapes() const
+	{
+		int internal_h = (int)(INPUT_HEIGHT * DOWNSAMPLE_RATIO);
+		int internal_w = (int)(INPUT_WIDTH * DOWNSAMPLE_RATIO);
+		std::string s = "src:1x3x" + std::to_string(INPUT_HEIGHT) + "x" + std::to_string(INPUT_WIDTH);
+		int h = internal_h;
+		int w = internal_w;
+		for (int i = 0; i < 4; i++) {
+			h = (h + 1) / 2;
+			w = (w + 1) / 2;
+			s += ",r" + std::to_string(i + 1) + "i:1x" + std::to_string(REC_CHANNELS[i]) + "x" +
+			     std::to_string(h) + "x" + std::to_string(w);
+		}
+		s += ",downsample_ratio:1";
+		return s;
+	}
+
 	virtual void populateInputOutputNames(const std::unique_ptr<Ort::Session> &session,
 					      std::vector<Ort::AllocatedStringPtr> &inputNames,
 					      std::vector<Ort::AllocatedStringPtr> &outputNames)
